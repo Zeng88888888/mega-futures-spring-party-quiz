@@ -75,6 +75,10 @@ select {
   color: var(--text);
 }
 
+input[readonly] {
+  background: rgba(255, 250, 243, 0.92);
+}
+
 .textarea {
   width: 100%;
   padding: 0.9rem 1rem;
@@ -513,6 +517,44 @@ button {
   border-radius: 999px;
   background: #fff4eb;
   color: var(--accent);
+}
+
+.link-button {
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font-weight: 700;
+  text-align: left;
+}
+
+.link-button:hover {
+  color: var(--accent);
+  transform: none;
+}
+
+.qr-card {
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.qr-preview {
+  width: min(220px, 100%);
+  height: auto;
+  border-radius: 16px;
+}
+
+.mono-input {
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  font-size: 0.95rem;
+}
+
+.status-note {
+  color: var(--muted);
+  font-size: 0.92rem;
 }
 
 .chip-grid {
