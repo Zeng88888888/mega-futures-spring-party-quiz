@@ -73,9 +73,7 @@ export function PlayerQuestionPage() {
 
     update();
     const timer = window.setInterval(update, 250);
-    return () => {
-      window.clearInterval(timer);
-    };
+    return () => window.clearInterval(timer);
   }, [game]);
 
   const remainingSeconds = useMemo(() => {
@@ -108,8 +106,8 @@ export function PlayerQuestionPage() {
   if (!game || !question) {
     return (
       <div className="player-layout">
-        <SectionCard title="等待題目" subtitle="目前尚未開題。">
-          <p>請稍候主持人開始本題。</p>
+        <SectionCard title="等待題目">
+          <p>目前尚未開始作答，請稍候。</p>
         </SectionCard>
       </div>
     );
@@ -133,13 +131,13 @@ export function PlayerQuestionPage() {
       </section>
 
       <SectionCard
+        subtitle={answer ? "等待主持人公布結果。" : player ? `玩家：${player.nickname}` : undefined}
         title={answer ? "已送出答案" : "請選擇答案"}
-        subtitle={answer ? "等待主持人公布結果。" : player ? `玩家：${player.nickname}` : "請完成本題作答。"}
       >
         {answer ? (
           <div className="result-box">
             <strong>{answer.selectedOption}</strong>
-            <p>你的答案已鎖定。</p>
+            <p>答案已鎖定，請等待結果公布。</p>
           </div>
         ) : (
           <div className="answer-grid">

@@ -2,21 +2,21 @@ import {
   createQuestionBank,
   createGame,
   deleteGame,
-  deleteQuestionBank,
   deleteQuestion,
+  deleteQuestionBank,
   endGame,
+  getControlSnapshot,
   getGameById,
   getGameByJoinCode,
   getPlayerById,
   getRoundQuestion,
-  getControlSnapshot,
   importQuestions,
-  listQuestionBanks,
   listAnswersForRound,
-  listQuestions,
   listGames,
-  listPlayers,
   listPlayerRoundStatuses,
+  listPlayers,
+  listQuestionBanks,
+  listQuestions,
   openRegistration,
   resolveRound,
   startGame,
@@ -33,30 +33,30 @@ const actions = {
   createQuestionBank,
   createGame,
   deleteGame,
+  deleteQuestion,
   deleteQuestionBank,
+  endGame,
+  getControlSnapshot,
   getGameById,
   getGameByJoinCode,
   getPlayerById,
-  listQuestionBanks,
-  listGames,
-  listPlayers,
-  listAnswersForRound,
-  listPlayerRoundStatuses,
-  listQuestions,
   getRoundQuestion,
-  getControlSnapshot,
+  importQuestions,
+  listAnswersForRound,
+  listGames,
+  listPlayerRoundStatuses,
+  listPlayers,
+  listQuestionBanks,
+  listQuestions,
   openRegistration,
+  resolveRound,
   startGame,
   startNextRound,
-  resolveRound,
-  endGame,
+  togglePlayerValidity,
   updateGame,
   updatePlayer,
-  togglePlayerValidity,
   updateQuestionBank,
-  upsertQuestion,
-  deleteQuestion,
-  importQuestions
+  upsertQuestion
 };
 
 export async function handler(event) {
@@ -70,12 +70,12 @@ export async function handler(event) {
     const action = actions[body.action];
 
     if (!action) {
-      return json(400, { message: "未知的管理操作。" });
+      return json(400, { message: "不支援的管理操作。" });
     }
 
     const result = await action(body.payload || {});
     return json(200, result || { ok: true });
   } catch (error) {
-    return json(error.statusCode || 500, { message: error.message || "管理操作失敗。" });
+    return json(error.statusCode || 500, { message: error.message || "後台操作失敗。" });
   }
 }

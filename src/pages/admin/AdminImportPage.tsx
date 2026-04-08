@@ -1,5 +1,5 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { SectionCard } from "../../components/SectionCard";
 import { parseCsv } from "../../lib/csv";
 import { fetchQuestionBanks, importQuestionsRecord } from "../../lib/gameApi";
@@ -17,7 +17,6 @@ type ImportRow = {
 };
 
 export function AdminImportPage() {
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [banks, setBanks] = useState<QuestionBank[]>([]);
   const [selectedBankId, setSelectedBankId] = useState(searchParams.get("bankId") ?? "");
@@ -94,7 +93,7 @@ export function AdminImportPage() {
       setError("");
       setMessage("");
       await importQuestionsRecord(selectedBankId, validRows);
-      setMessage(`已匯入 ${validRows.length} 題到 ${selectedBank?.title ?? "指定題庫"}。`);
+      setMessage(`已匯入 ${validRows.length} 題到 ${selectedBank?.title ?? "目前題庫"}。`);
       setRows([]);
     } catch (submissionError) {
       setError(submissionError instanceof Error ? submissionError.message : "匯入題目失敗。");
@@ -106,10 +105,13 @@ export function AdminImportPage() {
       <section className="player-stage">
         <p className="eyebrow">主持人後台 / 匯入題目</p>
         <h1>CSV / Excel 匯入題目</h1>
-        <p className="hero-text">請先選題庫，匯入後題目會直接歸到該題庫底下。</p>
+        <p className="hero-text">上傳檔案後會先預覽內容，再匯入到目前選定的題庫。</p>
       </section>
 
-      <SectionCard title="匯入設定" subtitle="匯入前請確認正確答案欄位為 A、B、C 或 D。">
+      <SectionCard
+        subtitle="欄位需包含 content、option_a、option_b、option_c、option_d、correct_option、explanation。"
+        title="匯入設定"
+      >
         <div className="form-grid form-grid--wide">
           <label>
             目標題庫
@@ -142,7 +144,7 @@ export function AdminImportPage() {
           </a>
           {selectedBankId ? (
             <Link className="button button--ghost" to={`/admin/questions?bankId=${selectedBankId}`}>
-              回題庫管理
+              前往題庫管理
             </Link>
           ) : null}
         </div>
@@ -151,10 +153,7 @@ export function AdminImportPage() {
         {message ? <p className="inline-success">{message}</p> : null}
       </SectionCard>
 
-      <SectionCard
-        title="匯入預覽"
-        subtitle={`總共讀到 ${rows.length} 筆，可匯入 ${validRows.length} 筆。`}
-      >
+      <SectionCard subtitle={`已讀取 ${rows.length} 筆，符合格式 ${validRows.length} 筆。`} title="匯入預覽">
         <div className="table-card">
           <table>
             <thead>

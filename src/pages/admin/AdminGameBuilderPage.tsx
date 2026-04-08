@@ -1,12 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { SectionCard } from "../../components/SectionCard";
-import {
-  createGameRecord,
-  fetchGameById,
-  fetchQuestionBanks,
-  updateGameRecord
-} from "../../lib/gameApi";
+import { createGameRecord, fetchGameById, fetchQuestionBanks, updateGameRecord } from "../../lib/gameApi";
 import type { GameMode, QuestionBank } from "../../types/domain";
 
 function generateJoinCode() {
@@ -67,7 +62,7 @@ export function AdminGameBuilderPage() {
         }
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "讀取場次設定失敗。");
+          setError(loadError instanceof Error ? loadError.message : "讀取場次資料失敗。");
         }
       } finally {
         if (!cancelled) {
@@ -125,14 +120,12 @@ export function AdminGameBuilderPage() {
       <section className="player-stage">
         <p className="eyebrow">主持人後台 / 場次設定</p>
         <h1>{isEditing ? "編輯場次" : "建立新場次"}</h1>
-        <p className="hero-text">每一場只能選一個題庫，題目會依題庫內容自動帶入。</p>
+        <p className="hero-text">每個場次只能綁定一個題庫，玩家掃 QR code 後會直接進入該場次的建立資料頁。</p>
       </section>
 
-      <SectionCard
-        title={isEditing ? "更新場次資料" : "建立場次資料"}
-        subtitle="先選題庫，再設定題數、模式與入場連結。"
-      >
-        {isLoading ? <p className="inline-success">正在讀取題庫資料...</p> : null}
+      <SectionCard subtitle="請選擇模式、題庫與題數。" title={isEditing ? "更新場次設定" : "建立場次設定"}>
+        {isLoading ? <p className="inline-success">載入設定中...</p> : null}
+
         <form className="form-grid form-grid--wide" onSubmit={handleSubmit}>
           <label>
             場次名稱
@@ -169,7 +162,7 @@ export function AdminGameBuilderPage() {
           </label>
 
           <label>
-            場次代碼
+            場次識別碼
             <input onChange={(event) => setJoinCode(event.target.value.toUpperCase())} value={joinCode} />
           </label>
 
@@ -186,8 +179,8 @@ export function AdminGameBuilderPage() {
           {selectedBank ? (
             <div className="info-box">
               <strong>目前題庫：{selectedBank.title}</strong>
-              <p>{selectedBank.description || "未填寫題庫說明"}</p>
-              <p>可用題數：{selectedBank.questionCount ?? 0}</p>
+              <p>{selectedBank.description || "尚未填寫題庫說明。"}</p>
+              <p>題目數：{selectedBank.questionCount ?? 0}</p>
             </div>
           ) : null}
 
@@ -195,17 +188,13 @@ export function AdminGameBuilderPage() {
 
           <div className="button-row">
             <button className="button button--primary" disabled={isSubmitting || isLoading} type="submit">
-              {isSubmitting ? "儲存中..." : isEditing ? "更新場次" : "建立場次"}
+              {isSubmitting ? "儲存中..." : isEditing ? "儲存場次" : "建立場次"}
             </button>
-            <button
-              className="button button--ghost"
-              onClick={() => setJoinCode(generateJoinCode())}
-              type="button"
-            >
-              重新產生代碼
+            <button className="button button--ghost" onClick={() => setJoinCode(generateJoinCode())} type="button">
+              重新產生識別碼
             </button>
             <Link className="button button--ghost" to="/admin/games">
-              返回場次列表
+              回場次列表
             </Link>
           </div>
         </form>

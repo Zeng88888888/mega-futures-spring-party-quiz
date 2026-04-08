@@ -13,8 +13,8 @@ function formatStatus(status: LiveGame["status"]) {
   const map: Record<LiveGame["status"], string> = {
     draft: "草稿",
     registering: "報名中",
-    live_question: "答題中",
-    round_result: "公布結果",
+    live_question: "進行中",
+    round_result: "公佈結果",
     ended: "已結束"
   };
   return map[status] ?? status;
@@ -33,23 +33,34 @@ export function PlayerJoinPage() {
   const [nickname, setNickname] = useState("");
   const [department, setDepartment] = useState("");
   const [employeeId, setEmployeeId] = useState("");
-  const [error, setError] = useState("");
   const [joinStats, setJoinStats] = useState("");
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadGames() {
-      const availableGames = await fetchJoinableGames();
-      if (cancelled) {
-        return;
-      }
+      try {
+        const availableGames = await fetchJoinableGames();
+        if (cancelled) {
+          return;
+        }
 
-      setGames(availableGames);
-      if (presetJoinCode) {
-        setSelectedGame(availableGames.find((game) => game.joinCode === presetJoinCode) ?? null);
-      } else {
-        setSelectedGame(availableGames[0] ?? null);
+        setGames(availableGames);
+        if (presetJoinCode) {
+          setSelectedGame(availableGames.find((game) => game.joinCode === presetJoinCode) ?? null);
+        } else {
+          setSelectedGame(availableGames[0] ?? null);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : "讀取場次失敗。");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     }
 
@@ -68,12 +79,17 @@ export function PlayerJoinPage() {
         return;
       }
 
-      const result = await fetchJoinStats(selectedGame.joinCode);
-      if (cancelled || !result.game) {
-        return;
+      try {
+        const result = await fetchJoinStats(selectedGame.joinCode);
+        if (cancelled || !result.game) {
+          return;
+        }
+        setJoinStats(`目前已有 ${result.playerCount} 位玩家加入`);
+      } catch {
+        if (!cancelled) {
+          setJoinStats("");
+        }
       }
-
-      setJoinStats(`目前 ${result.playerCount} 人已加入`);
     }
 
     void loadJoinStats();
@@ -93,10 +109,10 @@ export function PlayerJoinPage() {
 
     try {
       const { game, player } = await joinGameRecord({
+        joinCode: selectedGame.joinCode,
         nickname,
         department,
-        employeeId,
-        joinCode: selectedGame.joinCode
+        employeeId
       });
       setPlayerSession({ gameId: game.id, playerId: player.id });
       navigate("/player/waiting");
@@ -108,13 +124,14 @@ export function PlayerJoinPage() {
   return (
     <div className="player-layout">
       <section className="player-stage">
-        <p className="eyebrow">玩家端</p>
-        <h1>加入場次</h1>
+        <p className="eyebrow">玩家端 / 掃碼入場</p>
+        <h1>選擇場次後填寫資料即可加入</h1>
       </section>
 
       {!presetJoinCode ? (
-        <SectionCard title="選擇場次" subtitle="點選要加入的場次。">
+        <SectionCard title="場次列表">
           <div className="join-game-grid">
+            {games.length === 0 && !isLoading ? <p>目前沒有可加入的場次。</p> : null}
             {games.map((game) => (
               <button
                 className={`join-game-card${selectedGame?.id === game.id ? " join-game-card--active" : ""}`}
@@ -131,7 +148,7 @@ export function PlayerJoinPage() {
         </SectionCard>
       ) : null}
 
-      <SectionCard title="填寫資料" subtitle={joinStats || "請填寫暱稱、部門與員編。"}>
+      <SectionCard title="玩家資料" subtitle={joinStats || undefined}>
         {selectedGame ? (
           <div className="result-box result-box--compact">
             <strong>{selectedGame.title}</strong>
@@ -144,15 +161,15 @@ export function PlayerJoinPage() {
         <form className="form-grid" onSubmit={handleSubmit}>
           <label>
             暱稱
-            <input onChange={(event) => setNickname(event.target.value)} placeholder="例如：小智" value={nickname} />
+            <input onChange={(event) => setNickname(event.target.value)} value={nickname} />
           </label>
           <label>
             部門
-            <input onChange={(event) => setDepartment(event.target.value)} placeholder="例如：資訊部" value={department} />
+            <input onChange={(event) => setDepartment(event.target.value)} value={department} />
           </label>
           <label>
             員編
-            <input onChange={(event) => setEmployeeId(event.target.value)} placeholder="例如：A1234" value={employeeId} />
+            <input onChange={(event) => setEmployeeId(event.target.value)} value={employeeId} />
           </label>
           {error ? <p className="inline-error">{error}</p> : null}
           <button className="button button--primary" disabled={!selectedGame} type="submit">

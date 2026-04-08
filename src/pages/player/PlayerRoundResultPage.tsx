@@ -68,8 +68,8 @@ export function PlayerRoundResultPage() {
   if (!game || !question) {
     return (
       <div className="player-layout">
-        <SectionCard title="等待結果" subtitle="主持人尚未公布本題結果。">
-          <p>請稍候。</p>
+        <SectionCard title="等待結果">
+          <p>結果整理中，請稍候。</p>
         </SectionCard>
       </div>
     );
@@ -84,7 +84,7 @@ export function PlayerRoundResultPage() {
       </section>
 
       <div className="grid-2">
-        <SectionCard title="正確答案" subtitle="主持人公布後才會看到。">
+        <SectionCard title="正確答案">
           <div className="result-box">
             <strong>{question.correctOption}</strong>
             <p>{question.options[question.correctOption.charCodeAt(0) - 65]}</p>
@@ -92,11 +92,11 @@ export function PlayerRoundResultPage() {
         </SectionCard>
 
         {game.mode === "competition" ? (
-          <SectionCard title="即時前 10 名" subtitle="每題結束後更新。">
+          <SectionCard title="即時前 10 名">
             <RankList players={leaderboard} showMeta={false} />
           </SectionCard>
         ) : (
-          <SectionCard title="本輪結果" subtitle="公布後才會顯示存活或淘汰。">
+          <SectionCard title="淘汰賽結果">
             <div className="result-box">
               <strong>{playerRoundStatus?.survived ? "still alive" : "已被淘汰"}</strong>
               <p>
@@ -108,13 +108,13 @@ export function PlayerRoundResultPage() {
       </div>
 
       {game.mode === "survival" ? (
-        <SectionCard title="最後存活名單" subtitle="剩餘人數小於等於 10 人時會直接結束。">
+        <SectionCard title="存活名單">
           <RankList players={leaderboard} showMeta={false} showScore={false} />
         </SectionCard>
       ) : null}
 
       {player ? (
-        <SectionCard title="你的狀態" subtitle="本題答案狀態如下。">
+        <SectionCard title="你的結果">
           <ul className="plain-list">
             <li>玩家：{player.nickname}</li>
             <li>狀態：{player.status}</li>

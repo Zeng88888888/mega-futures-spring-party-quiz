@@ -1,10 +1,16 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { SectionCard } from "../../components/SectionCard";
 import { fetchGames, fetchPlayers, togglePlayerValidityRecord, updatePlayerRecord } from "../../lib/gameApi";
 import type { LiveGame, Player } from "../../types/domain";
 
 export function AdminPlayersPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const preferredGameId = searchParams.get("gameId") ?? "";
+
   const [game, setGame] = useState<LiveGame | null>(null);
+  const [games, setGames] = useState<LiveGame[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [keyword, setKeyword] = useState("");
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
@@ -13,21 +19,28 @@ export function AdminPlayersPage() {
   const [employeeId, setEmployeeId] = useState("");
   const [error, setError] = useState("");
 
-  async function load() {
-    const games = await fetchGames();
-    const currentGame = games[0] ?? null;
+  async function load(nextGameId?: string) {
+    const loadedGames = await fetchGames();
+    const currentGame =
+      loadedGames.find((item) => item.id === nextGameId) ??
+      loadedGames.find((item) => item.id === preferredGameId) ??
+      loadedGames[0] ??
+      null;
     const currentPlayers = currentGame ? await fetchPlayers(currentGame.id) : [];
 
+    setGames(loadedGames);
     setGame(currentGame);
     setPlayers(currentPlayers);
     if (currentPlayers[0]) {
       syncSelection(currentPlayers[0]);
+    } else {
+      syncSelection(undefined);
     }
   }
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [preferredGameId]);
 
   const filteredPlayers = useMemo(() => {
     if (!keyword.trim()) {
@@ -59,7 +72,7 @@ export function AdminPlayersPage() {
     try {
       setError("");
       await updatePlayerRecord(game.id, selectedPlayerId, { nickname, department, employeeId });
-      await load();
+      await load(game.id);
     } catch (submissionError) {
       setError(submissionError instanceof Error ? submissionError.message : "更新玩家資料失敗。");
     }
@@ -68,7 +81,7 @@ export function AdminPlayersPage() {
   if (!game) {
     return (
       <div className="admin-layout">
-        <SectionCard title="尚未建立場次" subtitle="請先建立場次後，再管理玩家。">
+        <SectionCard subtitle="請先建立場次後再管理玩家。" title="尚未建立場次">
           <p>目前沒有可管理的玩家資料。</p>
         </SectionCard>
       </div>
@@ -80,15 +93,33 @@ export function AdminPlayersPage() {
       <section className="player-stage">
         <p className="eyebrow">主持人後台 / 玩家管理</p>
         <h1>玩家資料管理</h1>
-        <p className="hero-text">可直接修正暱稱、部門、員編，也能將玩家標記為無效。</p>
+        <p className="hero-text">可依暱稱、部門或員編搜尋，並在現場直接修正玩家輸入錯誤。</p>
       </section>
 
       <div className="grid-2 admin-two-column">
-        <SectionCard title="玩家列表" subtitle={`目前場次：${game.title}`}>
+        <SectionCard subtitle={`目前場次：${game.title}`} title="玩家列表">
           <div className="form-grid">
             <label>
+              選擇場次
+              <select
+                onChange={(event) => {
+                  const nextId = event.target.value;
+                  navigate(`/admin/players?gameId=${nextId}`, { replace: true });
+                  void load(nextId);
+                }}
+                value={game.id}
+              >
+                {games.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
               搜尋
-              <input onChange={(event) => setKeyword(event.target.value)} placeholder="搜尋暱稱 / 部門 / 員編" value={keyword} />
+              <input onChange={(event) => setKeyword(event.target.value)} value={keyword} />
             </label>
           </div>
 
@@ -118,7 +149,7 @@ export function AdminPlayersPage() {
                         <button
                           onClick={async () => {
                             await togglePlayerValidityRecord(player.id, !player.valid);
-                            await load();
+                            await load(game.id);
                           }}
                           type="button"
                         >
@@ -133,7 +164,7 @@ export function AdminPlayersPage() {
           </div>
         </SectionCard>
 
-        <SectionCard title="編輯玩家" subtitle="修改後會即時同步到排行榜與場次資料。">
+        <SectionCard subtitle="選取左側玩家後可直接修正資料。" title="編輯玩家">
           <form className="form-grid" onSubmit={handleSave}>
             <label>
               暱稱
@@ -149,7 +180,7 @@ export function AdminPlayersPage() {
             </label>
             {error ? <p className="inline-error">{error}</p> : null}
             <button className="button button--primary" type="submit">
-              儲存修改
+              儲存資料
             </button>
           </form>
         </SectionCard>

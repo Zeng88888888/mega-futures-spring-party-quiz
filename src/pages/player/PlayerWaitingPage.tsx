@@ -9,8 +9,8 @@ function formatStatus(status?: LiveGame["status"]) {
   const map: Record<LiveGame["status"], string> = {
     draft: "草稿",
     registering: "報名中",
-    live_question: "答題中",
-    round_result: "公布結果",
+    live_question: "進行中",
+    round_result: "公佈結果",
     ended: "已結束"
   };
   return status ? map[status] ?? status : "-";
@@ -43,11 +43,9 @@ export function PlayerWaitingPage() {
 
       if (snapshot.game?.status === "live_question") {
         navigate("/player/question");
-      }
-      if (snapshot.game?.status === "round_result") {
+      } else if (snapshot.game?.status === "round_result") {
         navigate("/player/round-result");
-      }
-      if (snapshot.game?.status === "ended") {
+      } else if (snapshot.game?.status === "ended") {
         navigate("/player/final");
       }
     }
@@ -70,7 +68,7 @@ export function PlayerWaitingPage() {
         <h1>等待主持人開始</h1>
       </section>
 
-      <SectionCard title="目前資訊" subtitle="主持人開始後會自動進入答題頁。">
+      <SectionCard title="目前資訊">
         <div className="pill-row">
           <span className="pill">場次：{game?.title ?? "-"}</span>
           <span className="pill">狀態：{formatStatus(game?.status)}</span>

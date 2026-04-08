@@ -37,12 +37,12 @@ export function PlayerFinalPage() {
     <div className="player-layout">
       <section className="player-stage">
         <p className="eyebrow">最終結果</p>
-        <h1>本場活動已結束</h1>
+        <h1>本場遊戲已結束</h1>
       </section>
 
       <SectionCard
-        title={game?.mode === "survival" ? "最後存活名單" : "前 10 名排行榜"}
-        subtitle={game?.mode === "survival" ? "依最後存活名單顯示，不再細分名次。" : "依分數與作答速度排序。"}
+        subtitle={game?.mode === "survival" ? "以下為最後仍存活的玩家。" : "以下為本場最終排行榜。"}
+        title={game?.mode === "survival" ? "最後存活名單" : "最終前 10 名"}
       >
         <RankList players={leaders} showMeta={false} showScore={game?.mode !== "survival"} />
       </SectionCard>

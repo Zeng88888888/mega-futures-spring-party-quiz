@@ -35,7 +35,7 @@ async function callFunction<T>(
   const data = await readJsonSafe(response);
 
   if (!response.ok) {
-    throw new Error(String(data.message ?? "伺服器回應失敗。"));
+    throw new Error(String(data.message ?? "函式呼叫失敗。"));
   }
 
   return data as T;

@@ -169,14 +169,14 @@ export function AdminQuestionBankPage() {
     <div className="admin-layout stack-lg">
       <section className="player-stage">
         <p className="eyebrow">主持人後台 / 題庫管理</p>
-        <h1>題庫與題目管理</h1>
-        <p className="hero-text">先建立題庫，再往裡面新增題目。每一場只能選用一個題庫。</p>
+        <h1>題庫分類管理</h1>
+        <p className="hero-text">可建立題庫一、題庫二、題庫三等分類，並在各自題庫中管理題目。</p>
       </section>
 
       {error ? <p className="inline-error">{error}</p> : null}
 
       <div className="grid-2 admin-two-column">
-        <SectionCard title="題庫列表" subtitle="可建立題庫一、題庫二、題庫三等分類。">
+        <SectionCard subtitle="可新增、編輯、刪除題庫。" title="題庫列表">
           <div className="stack-md">
             <div className="table-actions">
               {banks.map((bank) => (
@@ -189,7 +189,7 @@ export function AdminQuestionBankPage() {
                   }}
                   type="button"
                 >
-                  {bank.title}（{bank.questionCount ?? 0}）
+                  {bank.title}（{bank.questionCount ?? 0} 題）
                 </button>
               ))}
             </div>
@@ -212,7 +212,7 @@ export function AdminQuestionBankPage() {
 
             <div className="button-row">
               <button className="button button--primary" onClick={() => void saveBank()} type="button">
-                {selectedBankId ? "更新題庫" : "新增題庫"}
+                {selectedBankId ? "儲存題庫" : "新增題庫"}
               </button>
               <button
                 className="button button--ghost"
@@ -224,7 +224,7 @@ export function AdminQuestionBankPage() {
                 }}
                 type="button"
               >
-                新題庫
+                清空表單
               </button>
               {selectedBankId ? (
                 <>
@@ -232,7 +232,7 @@ export function AdminQuestionBankPage() {
                     刪除題庫
                   </button>
                   <Link className="button button--ghost" to={`/admin/import?bankId=${selectedBankId}`}>
-                    匯入到這個題庫
+                    匯入到此題庫
                   </Link>
                 </>
               ) : null}
@@ -241,8 +241,8 @@ export function AdminQuestionBankPage() {
         </SectionCard>
 
         <SectionCard
+          subtitle={selectedBank ? "可在此題庫內增修題目。" : "請先選擇題庫。"}
           title={selectedBank ? `${selectedBank.title} 題目列表` : "題目列表"}
-          subtitle={selectedBank ? "題目會只顯示目前選定的題庫內容。" : "請先選擇題庫。"}
         >
           <div className="table-card">
             <table>
@@ -276,10 +276,7 @@ export function AdminQuestionBankPage() {
         </SectionCard>
       </div>
 
-      <SectionCard
-        title={questionForm.id ? "編輯題目" : "新增題目"}
-        subtitle={selectedBank ? `目前會儲存到 ${selectedBank.title}` : "請先選一個題庫。"}
-      >
+      <SectionCard subtitle={selectedBank ? `目前新增到 ${selectedBank.title}` : "請先選擇題庫。"} title={questionForm.id ? "編輯題目" : "新增題目"}>
         <div className="form-grid">
           <label>
             題目
@@ -334,7 +331,7 @@ export function AdminQuestionBankPage() {
           </label>
           <div className="button-row">
             <button className="button button--primary" onClick={() => void saveQuestion()} type="button">
-              {questionForm.id ? "更新題目" : "新增題目"}
+              {questionForm.id ? "儲存題目" : "新增題目"}
             </button>
             <button className="button button--ghost" onClick={() => editQuestion()} type="button">
               清空表單

@@ -202,12 +202,17 @@ td {
 .grid-2,
 .grid-4,
 .pill-row,
-.cta-row,
-.button-row,
-.chip-grid,
-.admin-nav-row {
+.chip-grid {
   display: grid;
   gap: 1rem;
+}
+
+.cta-row,
+.button-row,
+.admin-nav-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .hero-panel {
@@ -399,13 +404,8 @@ button {
 }
 
 .cta-row,
-.button-row {
-  grid-auto-flow: column;
-  justify-content: flex-start;
-}
-
+.button-row,
 .admin-nav-row {
-  grid-auto-flow: column;
   justify-content: flex-start;
 }
 

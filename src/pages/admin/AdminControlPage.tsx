@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { MetricCard } from "../../components/MetricCard";
 import { RankList } from "../../components/RankList";
 import { SectionCard } from "../../components/SectionCard";
 import {
   fetchAdminControlSnapshot,
-  fetchGameById,
   fetchGames,
   openRegistrationRecord,
   resolveCurrentRoundRecord,
@@ -22,65 +21,92 @@ function formatStatus(status: LiveGame["status"]) {
   const map: Record<LiveGame["status"], string> = {
     draft: "草稿",
     registering: "報名中",
-    live_question: "答題中",
-    round_result: "公布結果",
+    live_question: "進行中",
+    round_result: "公佈結果",
     ended: "已結束"
   };
   return map[status] ?? status;
 }
 
 export function AdminControlPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const preferredGameId = searchParams.get("gameId") ?? "";
+  const [games, setGames] = useState<LiveGame[]>([]);
   const [game, setGame] = useState<LiveGame | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [leaderboard, setLeaderboard] = useState<Player[]>([]);
   const [question, setQuestion] = useState<Question | null>(null);
   const [roundHistory, setRoundHistory] = useState<RoundResult[]>([]);
   const [submittedCount, setSubmittedCount] = useState(0);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     let timer: number | null = null;
 
     async function load(targetGameId?: string) {
-      const games = targetGameId ? [await fetchGameById(targetGameId)].filter(Boolean) : await fetchGames();
-      const currentGame = (games[0] as LiveGame | undefined) ?? null;
+      try {
+        setError("");
+        const loadedGames = await fetchGames();
+        const currentGame =
+          loadedGames.find((item) => item.id === targetGameId) ??
+          loadedGames.find((item) => item.id === preferredGameId) ??
+          loadedGames[0] ??
+          null;
 
-      if (!currentGame || cancelled) {
-        return;
-      }
+        if (!currentGame || cancelled) {
+          if (!cancelled) {
+            setGames(loadedGames);
+            setGame(null);
+            setPlayers([]);
+            setLeaderboard([]);
+            setQuestion(null);
+            setRoundHistory([]);
+            setSubmittedCount(0);
+          }
+          return;
+        }
 
-      const snapshot = await fetchAdminControlSnapshot(currentGame.id);
-      const currentPlayers = snapshot.players;
-      const currentLeaderboard = [...currentPlayers]
-        .filter((player) => player.valid)
-        .sort((left, right) => {
-          if (currentGame.mode === "competition") {
-            if (right.score !== left.score) {
-              return right.score - left.score;
+        const snapshot = await fetchAdminControlSnapshot(currentGame.id);
+        const currentPlayers = snapshot.players;
+        const currentLeaderboard = [...currentPlayers]
+          .filter((player) => player.valid)
+          .sort((left, right) => {
+            if (currentGame.mode === "competition") {
+              if (right.score !== left.score) {
+                return right.score - left.score;
+              }
+              return (left.totalMs ?? 0) - (right.totalMs ?? 0);
             }
-            return (left.totalMs ?? 0) - (right.totalMs ?? 0);
-          }
-          const leftAlive = left.status !== "eliminated";
-          const rightAlive = right.status !== "eliminated";
-          if (leftAlive !== rightAlive) {
-            return leftAlive ? -1 : 1;
-          }
-          return (left.joinedAt ?? "").localeCompare(right.joinedAt ?? "");
-        });
 
-      if (cancelled) {
-        return;
+            const leftAlive = left.status !== "eliminated";
+            const rightAlive = right.status !== "eliminated";
+            if (leftAlive !== rightAlive) {
+              return leftAlive ? -1 : 1;
+            }
+            return (left.joinedAt ?? "").localeCompare(right.joinedAt ?? "");
+          });
+
+        if (cancelled) {
+          return;
+        }
+
+        setGames(loadedGames);
+        setGame(currentGame);
+        setPlayers(currentPlayers);
+        setLeaderboard(currentLeaderboard.slice(0, currentGame.leaderboardSize || 10));
+        setQuestion(snapshot.question);
+        setRoundHistory(snapshot.roundHistory);
+        setSubmittedCount(snapshot.submittedCount);
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : "讀取控制台資料失敗。");
+        }
       }
-
-      setGame(currentGame);
-      setPlayers(currentPlayers);
-      setLeaderboard(currentLeaderboard.slice(0, currentGame.leaderboardSize || 10));
-      setQuestion(snapshot.question);
-      setRoundHistory(snapshot.roundHistory);
-      setSubmittedCount(snapshot.submittedCount);
     }
 
-    void load();
+    void load(game?.id);
     timer = window.setInterval(() => {
       void load(game?.id);
     }, 2000);
@@ -91,7 +117,7 @@ export function AdminControlPage() {
         window.clearInterval(timer);
       }
     };
-  }, [game?.id]);
+  }, [game?.id, preferredGameId]);
 
   const validPlayers = useMemo(() => players.filter((player) => player.valid), [players]);
   const invalidPlayers = useMemo(() => players.filter((player) => !player.valid), [players]);
@@ -100,10 +126,19 @@ export function AdminControlPage() {
     [validPlayers]
   );
 
+  async function runAction(action: () => Promise<void>) {
+    try {
+      setError("");
+      await action();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "場次操作失敗。");
+    }
+  }
+
   if (!game) {
     return (
       <div className="admin-layout">
-        <SectionCard title="尚未建立場次" subtitle="請先建立場次後再進入控制台。">
+        <SectionCard subtitle="請先建立場次後再進入控制台。" title="尚未建立場次">
           <Link className="button button--primary" to="/admin/games/new">
             建立場次
           </Link>
@@ -119,37 +154,63 @@ export function AdminControlPage() {
         <h1>{game.title}</h1>
         <div className="pill-row">
           <span className="pill">模式：{formatMode(game.mode)}</span>
-          <span className="pill">題庫：{game.bankTitle ?? "未指定"}</span>
+          <span className="pill">題庫：{game.bankTitle ?? "-"}</span>
           <span className="pill">目前第 {game.currentRound || 0} 題</span>
           <span className="pill">狀態：{formatStatus(game.status)}</span>
         </div>
         <div className="admin-nav-row">
-          <button className="button button--primary" onClick={() => void openRegistrationRecord(game.id)} type="button">
+          <button className="button button--primary" onClick={() => void runAction(() => openRegistrationRecord(game.id))} type="button">
             開始報名
           </button>
           {game.currentRound <= 0 ? (
-            <button className="button button--ghost" onClick={() => void startGameRecord(game.id)} type="button">
+            <button className="button button--ghost" onClick={() => void runAction(() => startGameRecord(game.id))} type="button">
               開始第一題
             </button>
           ) : null}
-          <button className="button button--ghost" onClick={() => void resolveCurrentRoundRecord(game.id)} type="button">
+          <button className="button button--ghost" onClick={() => void runAction(() => resolveCurrentRoundRecord(game.id))} type="button">
             公布結果
           </button>
-          <button className="button button--ghost" onClick={() => void startNextRoundRecord(game.id)} type="button">
+          <button className="button button--ghost" onClick={() => void runAction(() => startNextRoundRecord(game.id))} type="button">
             下一題
           </button>
         </div>
       </section>
 
+      {error ? <p className="inline-error">{error}</p> : null}
+
+      <SectionCard subtitle="可切換不同場次進行控制。" title="選擇場次">
+        <div className="form-grid">
+          <label>
+            目前場次
+            <select
+              onChange={(event) => {
+                const nextId = event.target.value;
+                navigate(`/admin/control?gameId=${nextId}`, { replace: true });
+              }}
+              value={game.id}
+            >
+              {games.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </SectionCard>
+
       <div className="grid-4">
-        <MetricCard label="有效玩家" value={validPlayers.length} tone="accent" />
-        <MetricCard label="無效玩家" value={invalidPlayers.length} tone="danger" />
-        <MetricCard label="本題已送出" value={`${submittedCount} / ${game.mode === "survival" ? alivePlayers.length : validPlayers.length}`} />
-        <MetricCard label="入場代碼" value={game.joinCode} />
+        <MetricCard label="有效玩家" tone="accent" value={validPlayers.length} />
+        <MetricCard label="無效玩家" tone="danger" value={invalidPlayers.length} />
+        <MetricCard
+          label="本題已送出"
+          value={`${submittedCount} / ${game.mode === "survival" ? alivePlayers.length : validPlayers.length}`}
+        />
+        <MetricCard label="題庫" value={game.bankTitle ?? "-"} />
       </div>
 
       <div className="grid-2 admin-two-column">
-        <SectionCard title="本題資訊" subtitle="主持人公布結果後，玩家端會同步切到結果頁。">
+        <SectionCard subtitle="主持人公布結果後，玩家端會即時切到結果頁。" title="本題資訊">
           {question ? (
             <div className="stack-md">
               <div className="result-box result-box--compact">
@@ -170,19 +231,23 @@ export function AdminControlPage() {
         </SectionCard>
 
         <SectionCard
+          aside={<Link to={`/admin/players?gameId=${game.id}`}>管理玩家</Link>}
+          subtitle="無效玩家已自動排除。"
           title={game.mode === "competition" ? "即時前 10 名" : "目前存活名單"}
-          subtitle="無效玩家會自動排除。"
-          aside={<Link to="/admin/players">管理玩家</Link>}
         >
           <RankList
-            players={game.mode === "competition" ? leaderboard : leaderboard.filter((player) => player.status !== "eliminated")}
+            players={
+              game.mode === "competition"
+                ? leaderboard
+                : leaderboard.filter((player) => player.status !== "eliminated")
+            }
             showMeta={false}
             showScore={game.mode === "competition"}
           />
         </SectionCard>
       </div>
 
-      <SectionCard title="每輪紀錄" subtitle="淘汰賽可查看每一輪剩餘與淘汰人數。">
+      <SectionCard subtitle="淘汰賽可查看每一輪剩餘人數與淘汰人數。" title="回合紀錄">
         <div className="table-card">
           <table>
             <thead>

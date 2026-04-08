@@ -32,17 +32,17 @@ export function AdminLoginPage() {
     <div className="admin-layout">
       <section className="player-stage">
         <p className="eyebrow">主持人後台</p>
-        <h1>登入控制後台</h1>
-        <p className="hero-text">請輸入你在 Netlify 設定的管理密碼。</p>
+        <h1>登入控制台</h1>
+        <p className="hero-text">輸入管理密碼後即可進入主持人後台。</p>
       </section>
 
-      <SectionCard title="管理員登入" subtitle="登入後會保留在目前這台電腦。">
+      <SectionCard title="管理登入">
         <form className="form-grid" onSubmit={handleSubmit}>
           <label>
-            管理密碼
+            後台密碼
             <input
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="請輸入密碼"
+              placeholder="請輸入主持人密碼"
               type="password"
               value={password}
             />

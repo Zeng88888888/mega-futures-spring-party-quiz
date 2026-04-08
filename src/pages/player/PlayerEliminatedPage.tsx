@@ -49,11 +49,11 @@ export function PlayerEliminatedPage() {
   return (
     <div className="player-layout">
       <section className="player-stage player-stage--danger">
-        <p className="eyebrow">淘汰賽</p>
+        <p className="eyebrow">淘汰通知</p>
         <h1>你已被淘汰</h1>
       </section>
 
-      <SectionCard title="目前狀態" subtitle="請等待本場活動結束後查看最終結果。">
+      <SectionCard title="本輪狀態">
         <div className="result-box result-box--danger">
           <strong>已被淘汰</strong>
           <p>
