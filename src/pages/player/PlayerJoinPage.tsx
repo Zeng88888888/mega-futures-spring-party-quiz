@@ -1,8 +1,24 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { SectionCard } from "../../components/SectionCard";
-import { fetchJoinStats, joinGameRecord } from "../../lib/gameApi";
+import { fetchJoinableGames, fetchJoinStats, joinGameRecord } from "../../lib/gameApi";
 import { setPlayerSession } from "../../lib/playerSession";
+import type { LiveGame } from "../../types/domain";
+
+function formatMode(mode: LiveGame["mode"]) {
+  return mode === "competition" ? "競賽模式" : "淘汰賽模式";
+}
+
+function formatStatus(status: LiveGame["status"]) {
+  const map: Record<LiveGame["status"], string> = {
+    draft: "草稿",
+    registering: "報名中",
+    live_question: "作答中",
+    round_result: "公布結果",
+    ended: "已結束"
+  };
+  return map[status] ?? status;
+}
 
 export function PlayerJoinPage() {
   const navigate = useNavigate();
@@ -11,49 +27,80 @@ export function PlayerJoinPage() {
     () => (searchParams.get("code") ?? searchParams.get("joinCode") ?? "").trim().toUpperCase(),
     [searchParams]
   );
+  const [games, setGames] = useState<LiveGame[]>([]);
+  const [selectedGame, setSelectedGame] = useState<LiveGame | null>(null);
   const [nickname, setNickname] = useState("");
   const [department, setDepartment] = useState("");
   const [employeeId, setEmployeeId] = useState("");
-  const [joinCode, setJoinCode] = useState(presetJoinCode);
   const [error, setError] = useState("");
-  const [joinStats, setJoinStats] = useState("請先掃描主持人提供的 QR code，或輸入場次加入碼。");
-  const [gameTitle, setGameTitle] = useState("");
+  const [joinStats, setJoinStats] = useState("請選擇一個場次後，再填寫資料加入。");
+  const [isLoadingGames, setIsLoadingGames] = useState(true);
 
   useEffect(() => {
-    if (presetJoinCode) {
-      setJoinCode(presetJoinCode);
+    let cancelled = false;
+
+    async function loadGames() {
+      try {
+        setIsLoadingGames(true);
+        const availableGames = await fetchJoinableGames();
+        if (cancelled) {
+          return;
+        }
+
+        setGames(availableGames);
+        if (presetJoinCode) {
+          setSelectedGame(
+            availableGames.find((game) => game.joinCode === presetJoinCode) ?? null
+          );
+        } else {
+          setSelectedGame(availableGames[0] ?? null);
+        }
+      } catch {
+        if (!cancelled) {
+          setJoinStats("場次清單載入失敗，請稍後再試。");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingGames(false);
+        }
+      }
     }
+
+    void loadGames();
+    return () => {
+      cancelled = true;
+    };
   }, [presetJoinCode]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadJoinStats() {
-      if (!joinCode.trim()) {
+      if (!selectedGame) {
         if (!cancelled) {
-          setGameTitle("");
-          setJoinStats("請先掃描主持人提供的 QR code，或輸入場次加入碼。");
+          if (presetJoinCode) {
+            setJoinStats("這個 QR code 對應的場次目前不可加入，請向主持人確認。");
+          } else {
+            setJoinStats("請先選擇一個場次，再填寫資料。");
+          }
         }
         return;
       }
 
       try {
-        const result = await fetchJoinStats(joinCode);
+        const result = await fetchJoinStats(selectedGame.joinCode);
         if (!result.game) {
           if (!cancelled) {
-            setGameTitle("");
-            setJoinStats("找不到這個場次，請重新掃描 QR code 或確認連結是否正確。");
+            setJoinStats("找不到這個場次，請重新選擇。");
           }
           return;
         }
 
         if (!cancelled) {
-          setGameTitle(result.game.title);
-          setJoinStats(`目前已有 ${result.playerCount} 位玩家加入，場次狀態為 ${result.game.status}。`);
+          setJoinStats(`目前已有 ${result.playerCount} 位玩家加入，狀態為 ${formatStatus(result.game.status as LiveGame["status"])}。`);
         }
       } catch {
         if (!cancelled) {
-          setGameTitle("");
           setJoinStats("場次資訊載入失敗，請稍後再試。");
         }
       }
@@ -63,18 +110,23 @@ export function PlayerJoinPage() {
     return () => {
       cancelled = true;
     };
-  }, [joinCode]);
+  }, [selectedGame, presetJoinCode]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+
+    if (!selectedGame) {
+      setError("請先選擇一個可加入的場次。");
+      return;
+    }
 
     try {
       const { game, player } = await joinGameRecord({
         nickname,
         department,
         employeeId,
-        joinCode
+        joinCode: selectedGame.joinCode
       });
       setPlayerSession({ gameId: game.id, playerId: player.id });
       navigate("/player/waiting");
@@ -87,17 +139,37 @@ export function PlayerJoinPage() {
     <div className="player-layout">
       <section className="player-stage">
         <p className="eyebrow">玩家端 / 掃碼入場</p>
-        <h1>掃描 QR code 後填寫資料即可加入</h1>
+        <h1>選擇場次後填寫資料即可加入</h1>
         <p className="hero-text">
-          進入頁面後只要填寫暱稱、部門與員編即可。若你是從主持人提供的 QR code 進來，系統會自動帶入場次，不需要再手動輸入代碼。
+          如果你是掃描主持人提供的 QR code 進來，場次會自動幫你選好。若是手動開啟頁面，也可以直接點選要加入的場次，不需要輸入場次代碼。
         </p>
       </section>
 
+      <SectionCard title="先選擇場次" subtitle={presetJoinCode ? "你是從 QR code 進來的，系統已優先幫你鎖定對應場次。" : "請先點選下方其中一個可加入場次。"}>
+        {isLoadingGames ? <p className="inline-success">正在載入可加入場次...</p> : null}
+        <div className="join-game-grid">
+          {games.map((game) => (
+            <button
+              className={`join-game-card${selectedGame?.id === game.id ? " join-game-card--active" : ""}`}
+              key={game.id}
+              onClick={() => setSelectedGame(game)}
+              type="button"
+            >
+              <strong>{game.title}</strong>
+              <span>{formatMode(game.mode)}</span>
+              <span>{formatStatus(game.status)}</span>
+            </button>
+          ))}
+        </div>
+      </SectionCard>
+
       <SectionCard title="玩家資料" subtitle={joinStats}>
-        {gameTitle ? (
+        {selectedGame ? (
           <div className="result-box">
-            <strong>{gameTitle}</strong>
-            <p>場次已鎖定為這一場，直接填資料即可加入。</p>
+            <strong>{selectedGame.title}</strong>
+            <p>
+              {formatMode(selectedGame.mode)} / {formatStatus(selectedGame.status)}
+            </p>
           </div>
         ) : null}
 
@@ -126,18 +198,8 @@ export function PlayerJoinPage() {
               value={employeeId}
             />
           </label>
-          {!presetJoinCode ? (
-            <label>
-              場次加入碼
-              <input
-                onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
-                placeholder="例如：MEGA2026"
-                value={joinCode}
-              />
-            </label>
-          ) : null}
           {error ? <p className="inline-error">{error}</p> : null}
-          <button className="button button--primary" type="submit">
+          <button className="button button--primary" disabled={!selectedGame} type="submit">
             加入場次
           </button>
         </form>

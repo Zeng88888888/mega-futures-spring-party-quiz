@@ -1,4 +1,4 @@
-import { Navigate, createBrowserRouter, NavLink, Outlet } from "react-router-dom";
+import { Navigate, NavLink, Outlet, createBrowserRouter, useLocation } from "react-router-dom";
 import { HomePage } from "./pages/HomePage";
 import { PlayerJoinPage } from "./pages/player/PlayerJoinPage";
 import { PlayerWaitingPage } from "./pages/player/PlayerWaitingPage";
@@ -16,6 +16,10 @@ import { AdminImportPage } from "./pages/admin/AdminImportPage";
 import { hasAdminSession } from "./lib/adminSession";
 
 function RootLayout() {
+  const location = useLocation();
+  const isPlayerRoute = location.pathname.startsWith("/player/");
+  const adminTarget = hasAdminSession() ? "/admin/games" : "/admin/login";
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -25,10 +29,12 @@ function RootLayout() {
             春酒答題平台
           </NavLink>
         </div>
-        <nav className="topnav">
-          <NavLink to="/player/join">玩家端</NavLink>
-          <NavLink to="/admin/login">主持人後台</NavLink>
-        </nav>
+        {!isPlayerRoute ? (
+          <nav className="topnav">
+            <NavLink to="/player/join">玩家端</NavLink>
+            <NavLink to={adminTarget}>主持人後台</NavLink>
+          </nav>
+        ) : null}
       </header>
       <main className="page-wrap">
         <Outlet />

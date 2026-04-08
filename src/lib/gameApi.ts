@@ -2,6 +2,7 @@ import { supabase } from "./supabase";
 import {
   joinGameServer,
   readJoinStats,
+  readJoinableGames,
   readPlayerSnapshot,
   runAdminAction,
   submitAnswerServer
@@ -530,6 +531,23 @@ export async function fetchLeaderboard(gameId: string, mode: GameMode) {
 
 export async function fetchJoinStats(joinCode: string) {
   return readJoinStats(joinCode);
+}
+
+export async function fetchJoinableGames() {
+  const result = await readJoinableGames();
+  return (result.games ?? []).map((row) => ({
+    id: String(row.id),
+    title: String(row.title),
+    mode: row.mode as GameMode,
+    questionCount: Number(row.questionCount ?? 0),
+    currentRound: Number(row.currentRound ?? 0),
+    status: row.status as GameStatus,
+    joinCode: String(row.joinCode),
+    competitionSeconds: row.competitionSeconds ? Number(row.competitionSeconds) : null,
+    leaderboardSize: Number(row.leaderboardSize ?? 10),
+    startedAt: row.startedAt ? String(row.startedAt) : null,
+    endedAt: row.endedAt ? String(row.endedAt) : null
+  })) as LiveGame[];
 }
 
 export async function fetchAdminControlSnapshot(gameId: string) {

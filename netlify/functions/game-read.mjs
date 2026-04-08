@@ -1,9 +1,10 @@
-import { getJoinStats, getPlayerSnapshot } from "./shared/gameService.mjs";
+import { getJoinStats, getPlayerSnapshot, listJoinableGames } from "./shared/gameService.mjs";
 import { json } from "./shared/supabaseAdmin.mjs";
 
 const actions = {
   getJoinStats,
-  getPlayerSnapshot
+  getPlayerSnapshot,
+  listJoinableGames
 };
 
 export async function handler(event) {

@@ -73,6 +73,24 @@ export async function readJoinStats(joinCode: string) {
   }>("game-read", { action: "getJoinStats", payload: { joinCode } });
 }
 
+export async function readJoinableGames() {
+  return callFunction<{
+    games: Array<{
+      id: string;
+      title: string;
+      mode: string;
+      status: string;
+      questionCount: number;
+      currentRound: number;
+      joinCode: string;
+      competitionSeconds?: number | null;
+      leaderboardSize: number;
+      startedAt?: string | null;
+      endedAt?: string | null;
+    }>;
+  }>("game-read", { action: "listJoinableGames", payload: {} });
+}
+
 export async function joinGameServer(payload: {
   joinCode: string;
   nickname: string;

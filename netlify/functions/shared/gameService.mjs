@@ -155,6 +155,38 @@ export async function getJoinStats(payload) {
   };
 }
 
+export async function listJoinableGames() {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("games")
+    .select(
+      "id, title, mode, status, question_count, current_round, join_code, competition_seconds, leaderboard_size, started_at, ended_at, created_at"
+    )
+    .in("status", ["draft", "registering"])
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    games:
+      (data ?? []).map((game) => ({
+        id: game.id,
+        title: game.title,
+        mode: game.mode,
+        status: game.status,
+        questionCount: game.question_count,
+        currentRound: game.current_round,
+        joinCode: game.join_code,
+        competitionSeconds: game.competition_seconds,
+        leaderboardSize: game.leaderboard_size,
+        startedAt: game.started_at,
+        endedAt: game.ended_at
+      })) ?? []
+  };
+}
+
 export async function getRoundQuestion(payload) {
   const question = await fetchQuestionForRound(payload.gameId, payload.roundNo);
   return { question };
