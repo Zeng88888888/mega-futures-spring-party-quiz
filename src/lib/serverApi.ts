@@ -35,7 +35,7 @@ async function callFunction<T>(
   const data = await readJsonSafe(response);
 
   if (!response.ok) {
-    throw new Error(String(data.message ?? "伺服器處理失敗。"));
+    throw new Error(String(data.message ?? "伺服器回應失敗。"));
   }
 
   return data as T;
@@ -80,6 +80,8 @@ export async function readJoinableGames() {
       title: string;
       mode: string;
       status: string;
+      bankId?: string;
+      bankTitle?: string;
       questionCount: number;
       currentRound: number;
       joinCode: string;
@@ -111,9 +113,6 @@ export async function submitAnswerServer(payload: {
   return callFunction<{ ok: true }>("player-action", { action: "submitAnswer", payload });
 }
 
-export async function runAdminAction<T = { ok: true }>(
-  action: string,
-  payload: Record<string, unknown>
-) {
+export async function runAdminAction<T = { ok: true }>(action: string, payload: Record<string, unknown>) {
   return callFunction<T>("admin-action", { action, payload }, { admin: true });
 }

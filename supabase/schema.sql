@@ -12,12 +12,21 @@ create table if not exists admin_users (
   created_at timestamptz not null default now()
 );
 
+create table if not exists question_banks (
+  id uuid primary key default gen_random_uuid(),
+  title text not null unique,
+  description text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists games (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   mode game_mode not null,
   status game_status not null default 'draft',
   join_code text not null unique,
+  bank_id uuid references question_banks(id) on delete restrict,
   question_count integer not null check (question_count > 0),
   competition_seconds integer,
   current_round integer not null default 0,
@@ -45,6 +54,7 @@ create table if not exists players (
 
 create table if not exists questions (
   id uuid primary key default gen_random_uuid(),
+  bank_id uuid references question_banks(id) on delete restrict,
   content text not null,
   option_a text not null,
   option_b text not null,
@@ -110,6 +120,8 @@ create index if not exists idx_players_game_status on players(game_id, status);
 create index if not exists idx_players_game_valid on players(game_id, is_valid);
 create index if not exists idx_answers_game_round on answers(game_id, round_no);
 create index if not exists idx_round_results_game_round on round_results(game_id, round_no);
+create index if not exists idx_questions_bank_id on questions(bank_id);
+create index if not exists idx_games_bank_id on games(bank_id);
 
 create or replace function set_updated_at()
 returns trigger as $$
@@ -137,6 +149,13 @@ before update on questions
 for each row
 execute function set_updated_at();
 
+drop trigger if exists trg_question_banks_updated_at on question_banks;
+create trigger trg_question_banks_updated_at
+before update on question_banks
+for each row
+execute function set_updated_at();
+
+alter table question_banks enable row level security;
 alter table games enable row level security;
 alter table players enable row level security;
 alter table questions enable row level security;
@@ -151,6 +170,7 @@ on games
 for select
 using (true);
 
+drop policy if exists "Public can read question banks" on question_banks;
 drop policy if exists "Public can read active questions" on questions;
 
 drop policy if exists "Public can read visible players" on players;
@@ -160,6 +180,7 @@ drop policy if exists "Public can read player round status" on player_round_stat
 
 drop policy if exists "Prototype can insert games" on games;
 drop policy if exists "Prototype can update games" on games;
+drop policy if exists "Prototype can manage question banks" on question_banks;
 drop policy if exists "Prototype can insert players" on players;
 drop policy if exists "Prototype can update players" on players;
 drop policy if exists "Prototype can manage questions" on questions;

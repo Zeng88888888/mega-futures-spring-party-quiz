@@ -6,7 +6,6 @@ import { loginAdmin } from "../../lib/serverApi";
 
 export function AdminLoginPage() {
   const navigate = useNavigate();
-  const [username, setUsername] = useState("host");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
@@ -25,38 +24,32 @@ export function AdminLoginPage() {
       setAdminPassword(password);
       navigate("/admin/games");
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "主持人登入失敗。");
+      setError(submissionError instanceof Error ? submissionError.message : "登入失敗。");
     }
   }
 
   return (
     <div className="admin-layout">
       <section className="player-stage">
-        <p className="eyebrow">主持人後台 / 登入</p>
-        <h1>輸入主持人密碼後進入控制頁</h1>
-        <p className="hero-text">
-          後台登入狀態會保留在這台裝置中，所以在同一台電腦切換後台頁面時，不需要每次重新登入。
-        </p>
+        <p className="eyebrow">主持人後台</p>
+        <h1>登入控制後台</h1>
+        <p className="hero-text">請輸入你在 Netlify 設定的管理密碼。</p>
       </section>
 
-      <SectionCard title="主持人登入" subtitle="請輸入你在 Netlify 設定的 ADMIN_PASSWORD。">
+      <SectionCard title="管理員登入" subtitle="登入後會保留在目前這台電腦。">
         <form className="form-grid" onSubmit={handleSubmit}>
           <label>
-            帳號顯示
-            <input onChange={(event) => setUsername(event.target.value)} placeholder="host" value={username} />
-          </label>
-          <label>
-            密碼
+            管理密碼
             <input
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="請輸入主持人密碼"
+              placeholder="請輸入密碼"
               type="password"
               value={password}
             />
           </label>
           {error ? <p className="inline-error">{error}</p> : null}
           <button className="button button--primary" type="submit">
-            登入後台
+            登入
           </button>
         </form>
       </SectionCard>

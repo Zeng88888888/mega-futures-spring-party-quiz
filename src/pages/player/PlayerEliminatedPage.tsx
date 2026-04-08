@@ -23,17 +23,14 @@ export function PlayerEliminatedPage() {
 
     async function load() {
       const snapshot = await fetchPlayerSnapshot(sessionData.gameId, sessionData.playerId);
-      const nextGame = snapshot.game;
-      const nextPlayer = snapshot.player;
-
       if (cancelled) {
         return;
       }
 
-      setGame(nextGame);
-      setPlayer(nextPlayer);
+      setGame(snapshot.game);
+      setPlayer(snapshot.player);
 
-      if (nextGame?.status === "ended") {
+      if (snapshot.game?.status === "ended") {
         navigate("/player/final");
       }
     }
@@ -52,18 +49,15 @@ export function PlayerEliminatedPage() {
   return (
     <div className="player-layout">
       <section className="player-stage player-stage--danger">
-        <p className="eyebrow">淘汰賽結果</p>
-        <h1>本輪你已被淘汰</h1>
-        <p className="hero-text">
-          你可以繼續留在畫面上觀看最後結果。系統會在主持人結束場次後顯示最後存活名單。
-        </p>
+        <p className="eyebrow">淘汰賽</p>
+        <h1>你已被淘汰</h1>
       </section>
 
-      <SectionCard title="目前狀態" subtitle="這一頁會即時等待主持人結束整場。">
+      <SectionCard title="目前狀態" subtitle="請等待本場活動結束後查看最終結果。">
         <div className="result-box result-box--danger">
           <strong>已被淘汰</strong>
           <p>
-            玩家 {player?.nickname ?? ""} 目前狀態為 {player?.status ?? "未知"}，場次狀態 {game?.status ?? "未知"}。
+            {player?.nickname ?? "玩家"} / 場次狀態：{game?.status ?? "-"}
           </p>
         </div>
       </SectionCard>

@@ -1,9 +1,20 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { SectionCard } from "../../components/SectionCard";
 import { fetchPlayerSnapshot, subscribeToGameRealtime } from "../../lib/gameApi";
 import { getPlayerSession } from "../../lib/playerSession";
 import type { LiveGame, Player } from "../../types/domain";
+
+function formatStatus(status?: LiveGame["status"]) {
+  const map: Record<LiveGame["status"], string> = {
+    draft: "草稿",
+    registering: "報名中",
+    live_question: "答題中",
+    round_result: "公布結果",
+    ended: "已結束"
+  };
+  return status ? map[status] ?? status : "-";
+}
 
 export function PlayerWaitingPage() {
   const navigate = useNavigate();
@@ -23,23 +34,20 @@ export function PlayerWaitingPage() {
 
     async function load() {
       const snapshot = await fetchPlayerSnapshot(sessionData.gameId, sessionData.playerId);
-      const nextGame = snapshot.game;
-      const nextPlayer = snapshot.player;
-
       if (cancelled) {
         return;
       }
 
-      setGame(nextGame);
-      setPlayer(nextPlayer);
+      setGame(snapshot.game);
+      setPlayer(snapshot.player);
 
-      if (nextGame?.status === "live_question") {
+      if (snapshot.game?.status === "live_question") {
         navigate("/player/question");
       }
-      if (nextGame?.status === "round_result") {
+      if (snapshot.game?.status === "round_result") {
         navigate("/player/round-result");
       }
-      if (nextGame?.status === "ended") {
+      if (snapshot.game?.status === "ended") {
         navigate("/player/final");
       }
     }
@@ -58,25 +66,17 @@ export function PlayerWaitingPage() {
   return (
     <div className="player-layout">
       <section className="player-stage">
-        <p className="eyebrow">玩家端 / 等待開始</p>
-        <h1>已加入，等待主持人開始</h1>
-        <p className="hero-text">
-          場次一旦開始就會鎖定新玩家。請留意主持人口令，題目開啟後會自動切換到作答頁面。
-        </p>
+        <p className="eyebrow">玩家端</p>
+        <h1>等待主持人開始</h1>
       </section>
 
-      <SectionCard title="目前狀態" subtitle="這一頁已會即時跟著主持人操作更新。">
+      <SectionCard title="目前資訊" subtitle="主持人開始後會自動進入答題頁。">
         <div className="pill-row">
-          <span className="pill">場次：{game?.title ?? "尚未加入"}</span>
-          <span className="pill">場次狀態：{game?.status ?? "未知"}</span>
+          <span className="pill">場次：{game?.title ?? "-"}</span>
+          <span className="pill">狀態：{formatStatus(game?.status)}</span>
           <span className="pill">
-            你的身分：{player ? `${player.nickname} / ${player.department} / ${player.employeeId}` : "讀取中"}
+            玩家：{player ? `${player.nickname} / ${player.department} / ${player.employeeId}` : "-"}
           </span>
-        </div>
-        <div className="cta-row">
-          <Link className="button button--ghost" to="/player/question">
-            題目頁
-          </Link>
         </div>
       </SectionCard>
     </div>

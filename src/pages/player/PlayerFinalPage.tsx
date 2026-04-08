@@ -19,16 +19,12 @@ export function PlayerFinalPage() {
       }
 
       const snapshot = await fetchPlayerSnapshot(session.gameId, session.playerId);
-      if (!snapshot.game) {
+      if (!snapshot.game || cancelled) {
         return;
       }
 
-      const nextGame = snapshot.game;
-      const nextLeaders = snapshot.leaderboard;
-      if (!cancelled) {
-        setGame(nextGame);
-        setLeaders(nextLeaders.slice(0, nextGame.leaderboardSize || 10));
-      }
+      setGame(snapshot.game);
+      setLeaders(snapshot.leaderboard.slice(0, snapshot.game.leaderboardSize || 10));
     }
 
     void load();
@@ -41,17 +37,12 @@ export function PlayerFinalPage() {
     <div className="player-layout">
       <section className="player-stage">
         <p className="eyebrow">最終結果</p>
-        <h1>本場已結束</h1>
-        <p className="hero-text">
-          {game?.mode === "survival"
-            ? "以下為最後存活的前 10 名名單。"
-            : "恭喜上榜玩家，以下為本場競賽的最終排行榜。"}
-        </p>
+        <h1>本場活動已結束</h1>
       </section>
 
       <SectionCard
-        title={game?.mode === "survival" ? "最後存活名單" : "前 10 名"}
-        subtitle="無效玩家不會被列入最終榜單。"
+        title={game?.mode === "survival" ? "最後存活名單" : "前 10 名排行榜"}
+        subtitle={game?.mode === "survival" ? "依最後存活名單顯示，不再細分名次。" : "依分數與作答速度排序。"}
       >
         <RankList players={leaders} showMeta={false} showScore={game?.mode !== "survival"} />
       </SectionCard>

@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SectionCard } from "../../components/SectionCard";
-import {
-  fetchPlayerSnapshot,
-  submitAnswerRecord,
-  subscribeToGameRealtime
-} from "../../lib/gameApi";
+import { fetchPlayerSnapshot, submitAnswerRecord, subscribeToGameRealtime } from "../../lib/gameApi";
 import { getPlayerSession } from "../../lib/playerSession";
 import type { LiveGame, Player, PlayerAnswer, Question } from "../../types/domain";
 
@@ -31,38 +27,25 @@ export function PlayerQuestionPage() {
 
     async function load() {
       const snapshot = await fetchPlayerSnapshot(sessionData.gameId, sessionData.playerId);
-      const nextGame = snapshot.game;
-      const nextPlayer = snapshot.player;
-
       if (cancelled) {
         return;
       }
 
-      setGame(nextGame);
-      setPlayer(nextPlayer);
+      setGame(snapshot.game);
+      setPlayer(snapshot.player);
+      setQuestion(snapshot.question);
+      setAnswer(snapshot.answer);
 
-      if (!nextGame) {
-        return;
-      }
-
-      if (nextGame.status === "round_result") {
+      if (snapshot.game?.status === "round_result") {
         navigate("/player/round-result");
         return;
       }
-
-      if (nextGame.status === "ended") {
+      if (snapshot.game?.status === "ended") {
         navigate("/player/final");
         return;
       }
-
-      if (nextGame.mode === "survival" && nextPlayer?.status === "eliminated") {
+      if (snapshot.game?.mode === "survival" && snapshot.player?.status === "eliminated") {
         navigate("/player/eliminated");
-        return;
-      }
-
-      if (!cancelled) {
-        setQuestion(snapshot.question);
-        setAnswer(snapshot.answer);
       }
     }
 
@@ -107,23 +90,26 @@ export function PlayerQuestionPage() {
     if (!currentSession || !game) {
       return;
     }
-    const sessionData = currentSession;
 
     try {
       setError("");
-      await submitAnswerRecord({ gameId: game.id, playerId: sessionData.playerId, selectedOption: option });
-      const snapshot = await fetchPlayerSnapshot(game.id, sessionData.playerId);
+      await submitAnswerRecord({
+        gameId: game.id,
+        playerId: currentSession.playerId,
+        selectedOption: option
+      });
+      const snapshot = await fetchPlayerSnapshot(game.id, currentSession.playerId);
       setAnswer(snapshot.answer);
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "送出失敗。");
+      setError(submissionError instanceof Error ? submissionError.message : "送出答案失敗。");
     }
   }
 
   if (!game || !question) {
     return (
       <div className="player-layout">
-        <SectionCard title="等待題目" subtitle="主持人開題後，這裡會自動切換成作答畫面。">
-          <p>目前尚未進入可作答回合。</p>
+        <SectionCard title="等待題目" subtitle="目前尚未開題。">
+          <p>請稍候主持人開始本題。</p>
         </SectionCard>
       </div>
     );
@@ -147,13 +133,13 @@ export function PlayerQuestionPage() {
       </section>
 
       <SectionCard
-        title={answer ? "答案已送出" : "請選擇一個答案"}
-        subtitle={answer ? "已送出，等待主持人公布結果。" : "送出後會先鎖定，等待主持人公布結果。"}
+        title={answer ? "已送出答案" : "請選擇答案"}
+        subtitle={answer ? "等待主持人公布結果。" : player ? `玩家：${player.nickname}` : "請完成本題作答。"}
       >
         {answer ? (
           <div className="result-box">
             <strong>{answer.selectedOption}</strong>
-            <p>已送出，請等待主持人公布本題結果。</p>
+            <p>你的答案已鎖定。</p>
           </div>
         ) : (
           <div className="answer-grid">

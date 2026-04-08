@@ -29,8 +29,17 @@ export interface Player {
   joinedAt?: string;
 }
 
+export interface QuestionBank {
+  id: string;
+  title: string;
+  description: string;
+  questionCount?: number;
+  createdAt?: string;
+}
+
 export interface Question {
   id: string;
+  bankId: string;
   prompt: string;
   options: string[];
   correctOption: "A" | "B" | "C" | "D";
@@ -42,6 +51,8 @@ export interface LiveGame {
   id: string;
   title: string;
   mode: GameMode;
+  bankId: string;
+  bankTitle?: string;
   questionCount: number;
   currentRound: number;
   status: GameStatus;

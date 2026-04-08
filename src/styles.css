@@ -204,7 +204,8 @@ td {
 .pill-row,
 .cta-row,
 .button-row,
-.chip-grid {
+.chip-grid,
+.admin-nav-row {
   display: grid;
   gap: 1rem;
 }
@@ -344,6 +345,23 @@ button {
   color: var(--muted);
 }
 
+.info-box {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.info-box strong,
+.info-box p {
+  display: block;
+  margin: 0;
+}
+
+.info-box p + p {
+  margin-top: 0.4rem;
+}
+
 .inline-error {
   margin: 0;
   color: var(--danger);
@@ -382,6 +400,11 @@ button {
 
 .cta-row,
 .button-row {
+  grid-auto-flow: column;
+  justify-content: flex-start;
+}
+
+.admin-nav-row {
   grid-auto-flow: column;
   justify-content: flex-start;
 }
@@ -437,6 +460,10 @@ button {
 .result-box {
   padding: 1.5rem;
   text-align: center;
+}
+
+.result-box--compact {
+  text-align: left;
 }
 
 .result-box strong {
@@ -593,6 +620,10 @@ button {
   background: linear-gradient(180deg, #fff2d8 0%, #ffe4b6 100%);
 }
 
+.admin-two-column {
+  align-items: start;
+}
+
 @media (max-width: 960px) {
   .hero,
   .grid-2,
@@ -609,7 +640,8 @@ button {
   }
 
   .cta-row,
-  .button-row {
+  .button-row,
+  .admin-nav-row {
     grid-auto-flow: row;
   }
 }

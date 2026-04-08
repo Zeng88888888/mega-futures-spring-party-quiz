@@ -1,10 +1,18 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { SectionCard } from "../../components/SectionCard";
-import { deleteQuestionRecord, fetchQuestions, upsertQuestionRecord } from "../../lib/gameApi";
-import type { Question } from "../../types/domain";
+import {
+  createQuestionBankRecord,
+  deleteQuestionBankRecord,
+  deleteQuestionRecord,
+  fetchQuestionBanks,
+  fetchQuestions,
+  updateQuestionBankRecord,
+  upsertQuestionRecord
+} from "../../lib/gameApi";
+import type { Question, QuestionBank } from "../../types/domain";
 
-const emptyForm = {
+const emptyQuestionForm = {
   id: "",
   content: "",
   optionA: "",
@@ -16,27 +24,64 @@ const emptyForm = {
 };
 
 export function AdminQuestionBankPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const bankParam = searchParams.get("bankId") ?? "";
+
+  const [banks, setBanks] = useState<QuestionBank[]>([]);
+  const [selectedBankId, setSelectedBankId] = useState("");
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [form, setForm] = useState(emptyForm);
+  const [questionForm, setQuestionForm] = useState(emptyQuestionForm);
+  const [bankTitle, setBankTitle] = useState("");
+  const [bankDescription, setBankDescription] = useState("");
   const [error, setError] = useState("");
 
-  async function loadQuestions() {
-    const data = await fetchQuestions();
-    setQuestions(data);
+  const selectedBank = useMemo(
+    () => banks.find((bank) => bank.id === selectedBankId) ?? null,
+    [banks, selectedBankId]
+  );
+
+  async function loadBanks(nextBankId?: string) {
+    const loadedBanks = await fetchQuestionBanks();
+    setBanks(loadedBanks);
+    const targetId = nextBankId || bankParam || selectedBankId || loadedBanks[0]?.id || "";
+    setSelectedBankId(targetId);
+    const activeBank = loadedBanks.find((bank) => bank.id === targetId) ?? loadedBanks[0] ?? null;
+    setBankTitle(activeBank?.title ?? "");
+    setBankDescription(activeBank?.description ?? "");
+  }
+
+  async function loadQuestions(bankId: string) {
+    if (!bankId) {
+      setQuestions([]);
+      return;
+    }
+    const loadedQuestions = await fetchQuestions(bankId);
+    setQuestions(loadedQuestions);
   }
 
   useEffect(() => {
-    void loadQuestions();
+    void loadBanks();
   }, []);
 
-  function fillForm(question?: Question) {
+  useEffect(() => {
+    if (!selectedBankId) {
+      return;
+    }
+    void loadQuestions(selectedBankId);
+    const activeBank = banks.find((bank) => bank.id === selectedBankId);
+    setBankTitle(activeBank?.title ?? "");
+    setBankDescription(activeBank?.description ?? "");
+    setQuestionForm(emptyQuestionForm);
+  }, [selectedBankId, banks]);
+
+  function editQuestion(question?: Question) {
     if (!question) {
-      setForm(emptyForm);
-      setError("");
+      setQuestionForm(emptyQuestionForm);
       return;
     }
 
-    setForm({
+    setQuestionForm({
       id: question.id,
       content: question.prompt,
       optionA: question.options[0],
@@ -46,17 +91,63 @@ export function AdminQuestionBankPage() {
       correctOption: question.correctOption,
       explanation: question.explanation
     });
-    setError("");
+  }
+
+  async function saveBank() {
+    try {
+      setError("");
+      if (!selectedBankId) {
+        const bank = await createQuestionBankRecord({
+          title: bankTitle.trim(),
+          description: bankDescription.trim()
+        });
+        await loadBanks(bank.id);
+        navigate(`/admin/questions?bankId=${bank.id}`, { replace: true });
+      } else {
+        await updateQuestionBankRecord({
+          id: selectedBankId,
+          title: bankTitle.trim(),
+          description: bankDescription.trim()
+        });
+        await loadBanks(selectedBankId);
+      }
+    } catch (submissionError) {
+      setError(submissionError instanceof Error ? submissionError.message : "儲存題庫失敗。");
+    }
+  }
+
+  async function removeBank() {
+    if (!selectedBankId) {
+      return;
+    }
+
+    try {
+      setError("");
+      await deleteQuestionBankRecord(selectedBankId);
+      await loadBanks();
+      navigate("/admin/questions", { replace: true });
+    } catch (submissionError) {
+      setError(submissionError instanceof Error ? submissionError.message : "刪除題庫失敗。");
+    }
   }
 
   async function saveQuestion() {
+    if (!selectedBankId) {
+      setError("請先選擇題庫。");
+      return;
+    }
+
     try {
       setError("");
-      await upsertQuestionRecord(form);
-      fillForm();
-      await loadQuestions();
+      await upsertQuestionRecord({
+        ...questionForm,
+        bankId: selectedBankId
+      });
+      editQuestion();
+      await loadBanks(selectedBankId);
+      await loadQuestions(selectedBankId);
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "題目儲存失敗。");
+      setError(submissionError instanceof Error ? submissionError.message : "儲存題目失敗。");
     }
   }
 
@@ -64,12 +155,13 @@ export function AdminQuestionBankPage() {
     try {
       setError("");
       await deleteQuestionRecord(id);
-      if (form.id === id) {
-        fillForm();
+      if (questionForm.id === id) {
+        editQuestion();
       }
-      await loadQuestions();
+      await loadBanks(selectedBankId);
+      await loadQuestions(selectedBankId);
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "題目刪除失敗。");
+      setError(submissionError instanceof Error ? submissionError.message : "刪除題目失敗。");
     }
   }
 
@@ -77,26 +169,87 @@ export function AdminQuestionBankPage() {
     <div className="admin-layout stack-lg">
       <section className="player-stage">
         <p className="eyebrow">主持人後台 / 題庫管理</p>
-        <h1>新增、編輯與整理活動題目</h1>
-        <div className="cta-row">
-          <button className="button button--primary" onClick={() => fillForm()} type="button">
-            新增題目
-          </button>
-          <Link className="button button--ghost" to="/admin/import">
-            匯入 CSV / Excel
-          </Link>
-        </div>
+        <h1>題庫與題目管理</h1>
+        <p className="hero-text">先建立題庫，再往裡面新增題目。每一場只能選用一個題庫。</p>
       </section>
 
-      <div className="grid-2">
-        <SectionCard title="題目列表" subtitle="這一頁現在會直接讀取 Supabase 題庫。">
+      {error ? <p className="inline-error">{error}</p> : null}
+
+      <div className="grid-2 admin-two-column">
+        <SectionCard title="題庫列表" subtitle="可建立題庫一、題庫二、題庫三等分類。">
+          <div className="stack-md">
+            <div className="table-actions">
+              {banks.map((bank) => (
+                <button
+                  className={bank.id === selectedBankId ? "button button--primary" : "button button--ghost"}
+                  key={bank.id}
+                  onClick={() => {
+                    setSelectedBankId(bank.id);
+                    navigate(`/admin/questions?bankId=${bank.id}`, { replace: true });
+                  }}
+                  type="button"
+                >
+                  {bank.title}（{bank.questionCount ?? 0}）
+                </button>
+              ))}
+            </div>
+
+            <div className="form-grid">
+              <label>
+                題庫名稱
+                <input onChange={(event) => setBankTitle(event.target.value)} value={bankTitle} />
+              </label>
+              <label>
+                題庫說明
+                <textarea
+                  className="textarea"
+                  onChange={(event) => setBankDescription(event.target.value)}
+                  rows={3}
+                  value={bankDescription}
+                />
+              </label>
+            </div>
+
+            <div className="button-row">
+              <button className="button button--primary" onClick={() => void saveBank()} type="button">
+                {selectedBankId ? "更新題庫" : "新增題庫"}
+              </button>
+              <button
+                className="button button--ghost"
+                onClick={() => {
+                  setSelectedBankId("");
+                  setBankTitle("");
+                  setBankDescription("");
+                  setQuestionForm(emptyQuestionForm);
+                }}
+                type="button"
+              >
+                新題庫
+              </button>
+              {selectedBankId ? (
+                <>
+                  <button className="button button--ghost" onClick={() => void removeBank()} type="button">
+                    刪除題庫
+                  </button>
+                  <Link className="button button--ghost" to={`/admin/import?bankId=${selectedBankId}`}>
+                    匯入到這個題庫
+                  </Link>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title={selectedBank ? `${selectedBank.title} 題目列表` : "題目列表"}
+          subtitle={selectedBank ? "題目會只顯示目前選定的題庫內容。" : "請先選擇題庫。"}
+        >
           <div className="table-card">
             <table>
               <thead>
                 <tr>
                   <th>題目</th>
                   <th>正確答案</th>
-                  <th>說明</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -105,10 +258,9 @@ export function AdminQuestionBankPage() {
                   <tr key={question.id}>
                     <td>{question.prompt}</td>
                     <td>{question.correctOption}</td>
-                    <td>{question.explanation}</td>
                     <td>
                       <div className="table-actions">
-                        <button onClick={() => fillForm(question)} type="button">
+                        <button onClick={() => editQuestion(question)} type="button">
                           編輯
                         </button>
                         <button onClick={() => void removeQuestion(question.id)} type="button">
@@ -122,72 +274,74 @@ export function AdminQuestionBankPage() {
             </table>
           </div>
         </SectionCard>
-
-        <SectionCard title={form.id ? "編輯題目" : "新增題目"} subtitle="管理寫入已改走受密碼保護的 Netlify Function。">
-          <div className="form-grid">
-            <label>
-              題目
-              <textarea
-                className="textarea"
-                onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))}
-                rows={4}
-                value={form.content}
-              />
-            </label>
-            <label>
-              選項 A
-              <input onChange={(event) => setForm((current) => ({ ...current, optionA: event.target.value }))} value={form.optionA} />
-            </label>
-            <label>
-              選項 B
-              <input onChange={(event) => setForm((current) => ({ ...current, optionB: event.target.value }))} value={form.optionB} />
-            </label>
-            <label>
-              選項 C
-              <input onChange={(event) => setForm((current) => ({ ...current, optionC: event.target.value }))} value={form.optionC} />
-            </label>
-            <label>
-              選項 D
-              <input onChange={(event) => setForm((current) => ({ ...current, optionD: event.target.value }))} value={form.optionD} />
-            </label>
-            <label>
-              正確答案
-              <select
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    correctOption: event.target.value as "A" | "B" | "C" | "D"
-                  }))
-                }
-                value={form.correctOption}
-              >
-                <option value="A">A</option>
-                <option value="B">B</option>
-                <option value="C">C</option>
-                <option value="D">D</option>
-              </select>
-            </label>
-            <label>
-              解說
-              <textarea
-                className="textarea"
-                onChange={(event) => setForm((current) => ({ ...current, explanation: event.target.value }))}
-                rows={3}
-                value={form.explanation}
-              />
-            </label>
-            {error ? <p className="inline-error">{error}</p> : null}
-            <div className="button-row">
-              <button className="button button--primary" onClick={() => void saveQuestion()} type="button">
-                {form.id ? "儲存修改" : "新增題目"}
-              </button>
-              <button className="button button--ghost" onClick={() => fillForm()} type="button">
-                清空表單
-              </button>
-            </div>
-          </div>
-        </SectionCard>
       </div>
+
+      <SectionCard
+        title={questionForm.id ? "編輯題目" : "新增題目"}
+        subtitle={selectedBank ? `目前會儲存到 ${selectedBank.title}` : "請先選一個題庫。"}
+      >
+        <div className="form-grid">
+          <label>
+            題目
+            <textarea
+              className="textarea"
+              onChange={(event) => setQuestionForm((current) => ({ ...current, content: event.target.value }))}
+              rows={3}
+              value={questionForm.content}
+            />
+          </label>
+          <label>
+            選項 A
+            <input onChange={(event) => setQuestionForm((current) => ({ ...current, optionA: event.target.value }))} value={questionForm.optionA} />
+          </label>
+          <label>
+            選項 B
+            <input onChange={(event) => setQuestionForm((current) => ({ ...current, optionB: event.target.value }))} value={questionForm.optionB} />
+          </label>
+          <label>
+            選項 C
+            <input onChange={(event) => setQuestionForm((current) => ({ ...current, optionC: event.target.value }))} value={questionForm.optionC} />
+          </label>
+          <label>
+            選項 D
+            <input onChange={(event) => setQuestionForm((current) => ({ ...current, optionD: event.target.value }))} value={questionForm.optionD} />
+          </label>
+          <label>
+            正確答案
+            <select
+              onChange={(event) =>
+                setQuestionForm((current) => ({
+                  ...current,
+                  correctOption: event.target.value as "A" | "B" | "C" | "D"
+                }))
+              }
+              value={questionForm.correctOption}
+            >
+              <option value="A">A</option>
+              <option value="B">B</option>
+              <option value="C">C</option>
+              <option value="D">D</option>
+            </select>
+          </label>
+          <label>
+            解說
+            <textarea
+              className="textarea"
+              onChange={(event) => setQuestionForm((current) => ({ ...current, explanation: event.target.value }))}
+              rows={3}
+              value={questionForm.explanation}
+            />
+          </label>
+          <div className="button-row">
+            <button className="button button--primary" onClick={() => void saveQuestion()} type="button">
+              {questionForm.id ? "更新題目" : "新增題目"}
+            </button>
+            <button className="button button--ghost" onClick={() => editQuestion()} type="button">
+              清空表單
+            </button>
+          </div>
+        </div>
+      </SectionCard>
     </div>
   );
 }

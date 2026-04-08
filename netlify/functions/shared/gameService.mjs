@@ -1,6 +1,24 @@
 import { getSupabaseAdmin } from "./supabaseAdmin.mjs";
 
 const DEFAULT_COMPETITION_SECONDS = 10;
+const DEFAULT_BANK_TITLE = "題庫一";
+
+const GAME_SELECT = `
+  id,
+  title,
+  mode,
+  status,
+  join_code,
+  bank_id,
+  question_count,
+  competition_seconds,
+  current_round,
+  leaderboard_size,
+  started_at,
+  ended_at,
+  created_at,
+  question_banks(title)
+`;
 
 function computeCompetitionScore(responseMs, competitionSeconds) {
   const durationMs = Math.max(competitionSeconds, 1) * 1000;
@@ -9,11 +27,223 @@ function computeCompetitionScore(responseMs, competitionSeconds) {
   return Math.round(10 + 90 * remainingRatio);
 }
 
+function normalizeGameRow(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    ...row,
+    bank_title: row.question_banks?.title ?? null
+  };
+}
+
+async function ensureDefaultQuestionBank() {
+  const supabase = getSupabaseAdmin();
+  const { data: existing, error: existingError } = await supabase
+    .from("question_banks")
+    .select("id, title, description, created_at")
+    .order("created_at", { ascending: true });
+
+  if (existingError) {
+    throw existingError;
+  }
+
+  if ((existing ?? []).length > 0) {
+    return existing[0];
+  }
+
+  const { data: bank, error: insertError } = await supabase
+    .from("question_banks")
+    .insert({
+      title: DEFAULT_BANK_TITLE,
+      description: "預設題庫"
+    })
+    .select("id, title, description, created_at")
+    .single();
+
+  if (insertError) {
+    throw insertError;
+  }
+
+  await supabase.from("questions").update({ bank_id: bank.id }).is("bank_id", null);
+  await supabase.from("games").update({ bank_id: bank.id }).is("bank_id", null);
+
+  return bank;
+}
+
+async function countQuestionsByBank() {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from("questions").select("bank_id");
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).reduce((map, row) => {
+    const key = row.bank_id;
+    map.set(key, (map.get(key) ?? 0) + 1);
+    return map;
+  }, new Map());
+}
+
+async function requireQuestionBank(bankId) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("question_banks")
+    .select("id, title, description, created_at")
+    .eq("id", bankId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error("找不到指定題庫。");
+  }
+
+  return data;
+}
+
+async function fetchQuestionsByBank(bankId, limit) {
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("questions")
+    .select("id, bank_id, content, option_a, option_b, option_c, option_d, correct_option, explanation, is_active")
+    .eq("bank_id", bankId)
+    .eq("is_active", true)
+    .order("created_at", { ascending: true });
+
+  if (limit) {
+    query = query.limit(limit);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+async function rebuildGameQuestions(gameId, bankId, questionCount) {
+  const supabase = getSupabaseAdmin();
+  const questions = await fetchQuestionsByBank(bankId, questionCount);
+
+  if (questions.length < questionCount) {
+    throw new Error(`所選題庫只有 ${questions.length} 題，不足 ${questionCount} 題。`);
+  }
+
+  const { error: deleteError } = await supabase.from("game_questions").delete().eq("game_id", gameId);
+  if (deleteError) {
+    throw deleteError;
+  }
+
+  const mappings = questions.slice(0, questionCount).map((question, index) => ({
+    game_id: gameId,
+    question_id: question.id,
+    order_no: index + 1
+  }));
+
+  const { error: insertError } = await supabase.from("game_questions").insert(mappings);
+  if (insertError) {
+    throw insertError;
+  }
+}
+
+export async function listQuestionBanks() {
+  const defaultBank = await ensureDefaultQuestionBank();
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("question_banks")
+    .select("id, title, description, created_at")
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  const counts = await countQuestionsByBank();
+  const banks = (data ?? [defaultBank]).map((bank) => ({
+    ...bank,
+    question_count: counts.get(bank.id) ?? 0
+  }));
+
+  return { banks };
+}
+
+export async function createQuestionBank(payload) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("question_banks")
+    .insert({
+      title: String(payload.title).trim(),
+      description: String(payload.description ?? "").trim()
+    })
+    .select("id, title, description, created_at")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return { bank: { ...data, question_count: 0 } };
+}
+
+export async function updateQuestionBank(payload) {
+  await requireQuestionBank(payload.id);
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("question_banks")
+    .update({
+      title: String(payload.title).trim(),
+      description: String(payload.description ?? "").trim()
+    })
+    .eq("id", payload.id);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function deleteQuestionBank(payload) {
+  const bank = await requireQuestionBank(payload.id);
+  if (bank.title === DEFAULT_BANK_TITLE) {
+    throw new Error("預設題庫不可刪除。");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const [{ count: questionCount, error: questionError }, { count: gameCount, error: gameError }] =
+    await Promise.all([
+      supabase.from("questions").select("id", { count: "exact", head: true }).eq("bank_id", payload.id),
+      supabase.from("games").select("id", { count: "exact", head: true }).eq("bank_id", payload.id)
+    ]);
+
+  if (questionError) {
+    throw questionError;
+  }
+
+  if (gameError) {
+    throw gameError;
+  }
+
+  if ((questionCount ?? 0) > 0 || (gameCount ?? 0) > 0) {
+    throw new Error("題庫仍有題目或場次使用中，無法刪除。");
+  }
+
+  const { error } = await supabase.from("question_banks").delete().eq("id", payload.id);
+  if (error) {
+    throw error;
+  }
+}
+
 export async function fetchGameById(gameId) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("games")
-    .select("id, title, mode, status, question_count, current_round, join_code, competition_seconds, leaderboard_size, started_at, ended_at")
+    .select(GAME_SELECT)
     .eq("id", gameId)
     .maybeSingle();
 
@@ -21,14 +251,14 @@ export async function fetchGameById(gameId) {
     throw error;
   }
 
-  return data;
+  return normalizeGameRow(data);
 }
 
 export async function fetchGameByJoinCode(joinCode) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("games")
-    .select("id, title, mode, status, question_count, current_round, join_code, competition_seconds, leaderboard_size, started_at, ended_at")
+    .select(GAME_SELECT)
     .eq("join_code", String(joinCode).trim().toUpperCase())
     .maybeSingle();
 
@@ -36,7 +266,7 @@ export async function fetchGameByJoinCode(joinCode) {
     throw error;
   }
 
-  return data;
+  return normalizeGameRow(data);
 }
 
 export async function getGameById(payload) {
@@ -100,7 +330,7 @@ export async function fetchQuestionForRound(gameId, roundNo) {
 
   const { data, error } = await supabase
     .from("questions")
-    .select("id, content, option_a, option_b, option_c, option_d, correct_option, explanation")
+    .select("id, bank_id, content, option_a, option_b, option_c, option_d, correct_option, explanation")
     .eq("id", mapping.question_id)
     .single();
 
@@ -111,12 +341,19 @@ export async function fetchQuestionForRound(gameId, roundNo) {
   return { ...data, order_no: mapping.order_no };
 }
 
-export async function listQuestions() {
+export async function listQuestions(payload = {}) {
+  await ensureDefaultQuestionBank();
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
+  let query = supabase
     .from("questions")
-    .select("id, content, option_a, option_b, option_c, option_d, correct_option, explanation, is_active")
+    .select("id, bank_id, content, option_a, option_b, option_c, option_d, correct_option, explanation, is_active, created_at")
     .order("created_at", { ascending: true });
+
+  if (payload.bankId) {
+    query = query.eq("bank_id", payload.bankId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw error;
@@ -159,9 +396,7 @@ export async function listJoinableGames() {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("games")
-    .select(
-      "id, title, mode, status, question_count, current_round, join_code, competition_seconds, leaderboard_size, started_at, ended_at, created_at"
-    )
+    .select(GAME_SELECT)
     .in("status", ["draft", "registering"])
     .order("created_at", { ascending: false });
 
@@ -170,20 +405,24 @@ export async function listJoinableGames() {
   }
 
   return {
-    games:
-      (data ?? []).map((game) => ({
-        id: game.id,
-        title: game.title,
-        mode: game.mode,
-        status: game.status,
-        questionCount: game.question_count,
-        currentRound: game.current_round,
-        joinCode: game.join_code,
-        competitionSeconds: game.competition_seconds,
-        leaderboardSize: game.leaderboard_size,
-        startedAt: game.started_at,
-        endedAt: game.ended_at
-      })) ?? []
+    games: (data ?? []).map((game) => {
+      const row = normalizeGameRow(game);
+      return {
+        id: row.id,
+        title: row.title,
+        mode: row.mode,
+        status: row.status,
+        bankId: row.bank_id,
+        bankTitle: row.bank_title,
+        questionCount: row.question_count,
+        currentRound: row.current_round,
+        joinCode: row.join_code,
+        competitionSeconds: row.competition_seconds,
+        leaderboardSize: row.leaderboard_size,
+        startedAt: row.started_at,
+        endedAt: row.ended_at
+      };
+    })
   };
 }
 
@@ -208,9 +447,7 @@ export async function fetchAnswersForRound(gameId, roundNo) {
 }
 
 export async function listAnswersForRound(payload) {
-  return {
-    answers: await fetchAnswersForRound(payload.gameId, payload.roundNo)
-  };
+  return { answers: await fetchAnswersForRound(payload.gameId, payload.roundNo) };
 }
 
 export async function listPlayerRoundStatuses(payload) {
@@ -233,18 +470,19 @@ export async function joinGame(payload) {
   const game = await fetchGameByJoinCode(payload.joinCode);
 
   if (!game) {
-    throw new Error("找不到對應的場次代碼。");
+    throw new Error("找不到這個場次。");
   }
 
   if (game.status !== "draft" && game.status !== "registering") {
-    throw new Error("本場次已開始或已結束，現在不能加入。");
+    throw new Error("這一場已經開始，現在不能再加入。");
   }
 
+  const employeeId = String(payload.employeeId).trim();
   const { data: duplicate, error: duplicateError } = await supabase
     .from("players")
     .select("id")
     .eq("game_id", game.id)
-    .eq("employee_id", String(payload.employeeId).trim())
+    .eq("employee_id", employeeId)
     .maybeSingle();
 
   if (duplicateError) {
@@ -252,7 +490,7 @@ export async function joinGame(payload) {
   }
 
   if (duplicate) {
-    throw new Error("此員編已在本場次報名。");
+    throw new Error("這位員編已經加入本場次。");
   }
 
   const { data, error } = await supabase
@@ -261,7 +499,7 @@ export async function joinGame(payload) {
       game_id: game.id,
       nickname: String(payload.nickname).trim(),
       department: String(payload.department).trim(),
-      employee_id: String(payload.employeeId).trim(),
+      employee_id: employeeId,
       status: "waiting",
       is_valid: true,
       total_score: 0,
@@ -275,29 +513,19 @@ export async function joinGame(payload) {
   }
 
   return {
-    game: {
-      id: game.id,
-      title: game.title,
-      mode: game.mode,
-      status: game.status,
-      question_count: game.question_count,
-      current_round: game.current_round,
-      join_code: game.join_code,
-      competition_seconds: game.competition_seconds,
-      leaderboard_size: game.leaderboard_size,
-      started_at: game.started_at,
-      ended_at: game.ended_at
-    },
+    game,
     player: data
   };
 }
 
 export async function createGame(payload) {
+  const bank = await requireQuestionBank(payload.bankId);
   const supabase = getSupabaseAdmin();
+  const joinCode = String(payload.joinCode).trim().toUpperCase();
   const { data: existingCode, error: existingError } = await supabase
     .from("games")
     .select("id")
-    .eq("join_code", String(payload.joinCode).trim().toUpperCase())
+    .eq("join_code", joinCode)
     .maybeSingle();
 
   if (existingError) {
@@ -305,7 +533,13 @@ export async function createGame(payload) {
   }
 
   if (existingCode) {
-    throw new Error("場次代碼已存在，請換一組。");
+    throw new Error("場次代碼重複，請重新產生。");
+  }
+
+  const questionCount = Number(payload.questionCount);
+  const availableQuestions = await fetchQuestionsByBank(bank.id, questionCount);
+  if (availableQuestions.length < questionCount) {
+    throw new Error(`「${bank.title}」只有 ${availableQuestions.length} 題，無法建立 ${questionCount} 題的場次。`);
   }
 
   const { data, error } = await supabase
@@ -313,45 +547,97 @@ export async function createGame(payload) {
     .insert({
       title: String(payload.title).trim(),
       mode: payload.mode,
-      question_count: Number(payload.questionCount),
-      join_code: String(payload.joinCode).trim().toUpperCase(),
+      bank_id: bank.id,
+      question_count: questionCount,
+      join_code: joinCode,
       leaderboard_size: Number(payload.leaderboardSize || 10),
       competition_seconds: DEFAULT_COMPETITION_SECONDS,
       status: "draft",
       current_round: 0
     })
-    .select(
-      "id, title, mode, status, question_count, current_round, join_code, competition_seconds, leaderboard_size, started_at, ended_at"
-    )
+    .select(GAME_SELECT)
     .single();
 
   if (error) {
     throw error;
   }
 
-  const { data: questions, error: questionError } = await supabase
-    .from("questions")
+  await rebuildGameQuestions(data.id, bank.id, questionCount);
+  return { game: normalizeGameRow(data) };
+}
+
+export async function updateGame(payload) {
+  const supabase = getSupabaseAdmin();
+  const game = await fetchGameById(payload.gameId);
+
+  if (!game) {
+    throw new Error("找不到要編輯的場次。");
+  }
+
+  if (!["draft", "registering"].includes(game.status)) {
+    throw new Error("只能編輯尚未開始的場次。");
+  }
+
+  const bank = await requireQuestionBank(payload.bankId);
+  const joinCode = String(payload.joinCode).trim().toUpperCase();
+  const questionCount = Number(payload.questionCount);
+
+  const { data: duplicate, error: duplicateError } = await supabase
+    .from("games")
     .select("id")
-    .order("created_at", { ascending: true })
-    .limit(Number(payload.questionCount));
+    .eq("join_code", joinCode)
+    .neq("id", payload.gameId)
+    .maybeSingle();
 
-  if (questionError) {
-    throw questionError;
+  if (duplicateError) {
+    throw duplicateError;
   }
 
-  if ((questions ?? []).length > 0) {
-    const mappings = questions.map((question, index) => ({
-      game_id: data.id,
-      question_id: question.id,
-      order_no: index + 1
-    }));
-    const { error: mappingError } = await supabase.from("game_questions").insert(mappings);
-    if (mappingError) {
-      throw mappingError;
-    }
+  if (duplicate) {
+    throw new Error("場次代碼重複，請重新產生。");
   }
 
-  return { game: data };
+  const availableQuestions = await fetchQuestionsByBank(bank.id, questionCount);
+  if (availableQuestions.length < questionCount) {
+    throw new Error(`「${bank.title}」只有 ${availableQuestions.length} 題，無法套用 ${questionCount} 題。`);
+  }
+
+  const { error } = await supabase
+    .from("games")
+    .update({
+      title: String(payload.title).trim(),
+      mode: payload.mode,
+      bank_id: bank.id,
+      question_count: questionCount,
+      join_code: joinCode,
+      leaderboard_size: Number(payload.leaderboardSize || 10)
+    })
+    .eq("id", payload.gameId);
+
+  if (error) {
+    throw error;
+  }
+
+  await rebuildGameQuestions(payload.gameId, bank.id, questionCount);
+  return { game: await fetchGameById(payload.gameId) };
+}
+
+export async function deleteGame(payload) {
+  const supabase = getSupabaseAdmin();
+  const game = await fetchGameById(payload.gameId);
+
+  if (!game) {
+    throw new Error("找不到要刪除的場次。");
+  }
+
+  if (["live_question", "round_result"].includes(game.status)) {
+    throw new Error("進行中的場次不能直接刪除。");
+  }
+
+  const { error } = await supabase.from("games").delete().eq("id", payload.gameId);
+  if (error) {
+    throw error;
+  }
 }
 
 export async function updatePlayer(payload) {
@@ -366,11 +652,12 @@ export async function updatePlayer(payload) {
     throw currentError;
   }
 
+  const employeeId = String(payload.employeeId).trim();
   const { data: duplicate, error: duplicateError } = await supabase
     .from("players")
     .select("id")
     .eq("game_id", currentPlayer.game_id)
-    .eq("employee_id", String(payload.employeeId).trim())
+    .eq("employee_id", employeeId)
     .neq("id", payload.playerId)
     .maybeSingle();
 
@@ -379,7 +666,7 @@ export async function updatePlayer(payload) {
   }
 
   if (duplicate) {
-    throw new Error("修改後的員編會和同場其他玩家重複。");
+    throw new Error("這個員編已被同場其他玩家使用。");
   }
 
   const { error } = await supabase
@@ -387,7 +674,7 @@ export async function updatePlayer(payload) {
     .update({
       nickname: String(payload.nickname).trim(),
       department: String(payload.department).trim(),
-      employee_id: String(payload.employeeId).trim()
+      employee_id: employeeId
     })
     .eq("id", payload.playerId);
 
@@ -431,9 +718,7 @@ async function resetPlayersForRound(gameId, mode) {
   );
 
   await Promise.all(
-    targetPlayers.map((player) =>
-      supabase.from("players").update({ status: "active" }).eq("id", player.id)
-    )
+    targetPlayers.map((player) => supabase.from("players").update({ status: "active" }).eq("id", player.id))
   );
 }
 
@@ -508,16 +793,16 @@ export async function submitAnswer(payload) {
   const player = await fetchPlayerById(payload.playerId);
 
   if (!game || game.status !== "live_question" || !player || !player.is_valid) {
-    throw new Error("目前不在可作答狀態。");
+    throw new Error("目前不能提交答案。");
   }
 
   if (game.mode === "survival" && player.status === "eliminated") {
-    throw new Error("你已被淘汰，不能繼續作答。");
+    throw new Error("你已經被淘汰，不能再作答。");
   }
 
   const question = await fetchQuestionForRound(payload.gameId, game.current_round);
   if (!question) {
-    throw new Error("目前找不到題目。");
+    throw new Error("本題尚未設定完成。");
   }
 
   const { data: existing, error: existingError } = await supabase
@@ -533,7 +818,7 @@ export async function submitAnswer(payload) {
   }
 
   if (existing) {
-    throw new Error("本題已送出，請等待主持人公布。");
+    throw new Error("你已經提交過這一題。");
   }
 
   if (game.mode === "competition" && game.started_at && game.competition_seconds) {
@@ -556,11 +841,7 @@ export async function submitAnswer(payload) {
     throw error;
   }
 
-  const { error: playerError } = await supabase
-    .from("players")
-    .update({ status: "submitted" })
-    .eq("id", payload.playerId);
-
+  const { error: playerError } = await supabase.from("players").update({ status: "submitted" }).eq("id", payload.playerId);
   if (playerError) {
     throw playerError;
   }
@@ -570,12 +851,12 @@ export async function resolveRound(payload) {
   const supabase = getSupabaseAdmin();
   const game = await fetchGameById(payload.gameId);
   if (!game || game.current_round <= 0) {
-    throw new Error("目前沒有可公布的回合。");
+    throw new Error("目前沒有可公布的題目。");
   }
 
   const question = await fetchQuestionForRound(payload.gameId, game.current_round);
   if (!question) {
-    throw new Error("目前找不到題目。");
+    throw new Error("找不到本回合題目。");
   }
 
   const players = await fetchPlayers(payload.gameId);
@@ -673,18 +954,16 @@ export async function resolveRound(payload) {
   }
 
   if (answerUpserts.length > 0) {
-    const { error } = await supabase.from("answers").upsert(answerUpserts, {
-      onConflict: "question_id,player_id"
-    });
+    const { error } = await supabase.from("answers").upsert(answerUpserts, { onConflict: "question_id,player_id" });
     if (error) {
       throw error;
     }
   }
 
   if (roundStatusUpserts.length > 0) {
-    const { error } = await supabase.from("player_round_statuses").upsert(roundStatusUpserts, {
-      onConflict: "question_id,player_id"
-    });
+    const { error } = await supabase
+      .from("player_round_statuses")
+      .upsert(roundStatusUpserts, { onConflict: "question_id,player_id" });
     if (error) {
       throw error;
     }
@@ -711,19 +990,17 @@ export async function resolveRound(payload) {
     return;
   }
 
-  const { error: gameError } = await supabase
-    .from("games")
-    .update({ status: "round_result" })
-    .eq("id", payload.gameId);
-
+  const { error: gameError } = await supabase.from("games").update({ status: "round_result" }).eq("id", payload.gameId);
   if (gameError) {
     throw gameError;
   }
 }
 
 export async function upsertQuestion(payload) {
+  const bank = await requireQuestionBank(payload.bankId);
   const supabase = getSupabaseAdmin();
   const record = {
+    bank_id: bank.id,
     content: String(payload.content).trim(),
     option_a: String(payload.optionA).trim(),
     option_b: String(payload.optionB).trim(),
@@ -757,12 +1034,13 @@ export async function deleteQuestion(payload) {
 }
 
 export async function importQuestions(payload) {
-  const supabase = getSupabaseAdmin();
+  const bank = await requireQuestionBank(payload.bankId);
   if (!Array.isArray(payload.rows) || payload.rows.length === 0) {
     throw new Error("沒有可匯入的題目資料。");
   }
 
   const rows = payload.rows.map((row) => ({
+    bank_id: bank.id,
     content: String(row.content).trim(),
     option_a: String(row.option_a).trim(),
     option_b: String(row.option_b).trim(),
@@ -773,6 +1051,7 @@ export async function importQuestions(payload) {
     is_active: true
   }));
 
+  const supabase = getSupabaseAdmin();
   const { error } = await supabase.from("questions").insert(rows);
   if (error) {
     throw error;
@@ -819,7 +1098,7 @@ export async function getPlayerSnapshot(payload) {
   const player = await fetchPlayerById(payload.playerId);
 
   if (!game || !player) {
-    throw new Error("找不到場次或玩家。");
+    throw new Error("找不到玩家或場次資料。");
   }
 
   const [players, answers, roundResults, roundStatuses] = await Promise.all([
@@ -844,8 +1123,7 @@ export async function getPlayerSnapshot(payload) {
       : Promise.resolve({ data: null, error: null })
   ]);
 
-  const question =
-    game.current_round > 0 ? await fetchQuestionForRound(payload.gameId, game.current_round) : null;
+  const question = game.current_round > 0 ? await fetchQuestionForRound(payload.gameId, game.current_round) : null;
   const currentAnswer = answers.find((answer) => answer.player_id === payload.playerId) ?? null;
 
   return {
@@ -854,6 +1132,8 @@ export async function getPlayerSnapshot(payload) {
       title: game.title,
       mode: game.mode,
       status: game.status,
+      bankId: game.bank_id,
+      bankTitle: game.bank_title,
       questionCount: game.question_count,
       currentRound: game.current_round,
       competitionSeconds: game.competition_seconds,
@@ -874,6 +1154,7 @@ export async function getPlayerSnapshot(payload) {
     question: question
       ? {
           id: question.id,
+          bankId: question.bank_id,
           prompt: question.content,
           options: [question.option_a, question.option_b, question.option_c, question.option_d],
           orderNo: question.order_no,
@@ -899,19 +1180,17 @@ export async function getPlayerSnapshot(payload) {
 }
 
 export async function listGames() {
+  await ensureDefaultQuestionBank();
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("games")
-    .select(
-      "id, title, mode, status, question_count, current_round, join_code, competition_seconds, leaderboard_size, started_at, ended_at, created_at"
-    )
-    .order("created_at", { ascending: false });
+  const { data, error } = await supabase.from("games").select(GAME_SELECT).order("created_at", { ascending: false });
 
   if (error) {
     throw error;
   }
 
-  return { games: data ?? [] };
+  return {
+    games: (data ?? []).map((row) => normalizeGameRow(row))
+  };
 }
 
 export async function listPlayers(payload) {
@@ -932,7 +1211,7 @@ export async function getControlSnapshot(payload) {
       .from("round_results")
       .select("round_no, published_at, alive_count, eliminated_count")
       .eq("game_id", payload.gameId)
-      .order("round_no", { ascending: true }),
+      .order("round_no", { ascending: true })
   ]);
 
   const question = game.current_round > 0 ? await fetchQuestionForRound(payload.gameId, game.current_round) : null;

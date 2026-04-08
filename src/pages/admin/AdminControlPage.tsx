@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { MetricCard } from "../../components/MetricCard";
 import { RankList } from "../../components/RankList";
@@ -10,9 +10,24 @@ import {
   openRegistrationRecord,
   resolveCurrentRoundRecord,
   startGameRecord,
-  startNextRoundRecord,
+  startNextRoundRecord
 } from "../../lib/gameApi";
 import type { LiveGame, Player, Question, RoundResult } from "../../types/domain";
+
+function formatMode(mode: LiveGame["mode"]) {
+  return mode === "competition" ? "競賽模式" : "淘汰賽模式";
+}
+
+function formatStatus(status: LiveGame["status"]) {
+  const map: Record<LiveGame["status"], string> = {
+    draft: "草稿",
+    registering: "報名中",
+    live_question: "答題中",
+    round_result: "公布結果",
+    ended: "已結束"
+  };
+  return map[status] ?? status;
+}
 
 export function AdminControlPage() {
   const [game, setGame] = useState<LiveGame | null>(null);
@@ -30,15 +45,7 @@ export function AdminControlPage() {
       const games = targetGameId ? [await fetchGameById(targetGameId)].filter(Boolean) : await fetchGames();
       const currentGame = (games[0] as LiveGame | undefined) ?? null;
 
-      if (!currentGame) {
-        if (!cancelled) {
-          setGame(null);
-          setPlayers([]);
-          setLeaderboard([]);
-          setQuestion(null);
-          setRoundHistory([]);
-          setSubmittedCount(0);
-        }
+      if (!currentGame || cancelled) {
         return;
       }
 
@@ -77,6 +84,7 @@ export function AdminControlPage() {
     timer = window.setInterval(() => {
       void load(game?.id);
     }, 2000);
+
     return () => {
       cancelled = true;
       if (timer !== null) {
@@ -85,16 +93,19 @@ export function AdminControlPage() {
     };
   }, [game?.id]);
 
-  const validPlayers = players.filter((player) => player.valid);
-  const invalidPlayers = players.filter((player) => !player.valid);
-  const alivePlayers = validPlayers.filter((player) => player.status !== "eliminated");
+  const validPlayers = useMemo(() => players.filter((player) => player.valid), [players]);
+  const invalidPlayers = useMemo(() => players.filter((player) => !player.valid), [players]);
+  const alivePlayers = useMemo(
+    () => validPlayers.filter((player) => player.status !== "eliminated"),
+    [validPlayers]
+  );
 
   if (!game) {
     return (
       <div className="admin-layout">
-        <SectionCard title="尚無場次" subtitle="先建立一個場次，再回到控台操作。">
+        <SectionCard title="尚未建立場次" subtitle="請先建立場次後再進入控制台。">
           <Link className="button button--primary" to="/admin/games/new">
-            建立新場次
+            建立場次
           </Link>
         </SectionCard>
       </div>
@@ -107,11 +118,12 @@ export function AdminControlPage() {
         <p className="eyebrow">主持人後台 / 場次控制台</p>
         <h1>{game.title}</h1>
         <div className="pill-row">
-          <span className="pill">模式：{game.mode === "competition" ? "競賽模式" : "淘汰賽模式"}</span>
+          <span className="pill">模式：{formatMode(game.mode)}</span>
+          <span className="pill">題庫：{game.bankTitle ?? "未指定"}</span>
           <span className="pill">目前第 {game.currentRound || 0} 題</span>
-          <span className="pill">狀態：{game.status}</span>
+          <span className="pill">狀態：{formatStatus(game.status)}</span>
         </div>
-        <div className="cta-row">
+        <div className="admin-nav-row">
           <button className="button button--primary" onClick={() => void openRegistrationRecord(game.id)} type="button">
             開始報名
           </button>
@@ -133,25 +145,23 @@ export function AdminControlPage() {
         <MetricCard label="有效玩家" value={validPlayers.length} tone="accent" />
         <MetricCard label="無效玩家" value={invalidPlayers.length} tone="danger" />
         <MetricCard label="本題已送出" value={`${submittedCount} / ${game.mode === "survival" ? alivePlayers.length : validPlayers.length}`} />
-        <MetricCard label="入場網址代碼" value={game.joinCode} />
+        <MetricCard label="入場代碼" value={game.joinCode} />
       </div>
 
-      <div className="grid-2">
-        <SectionCard title="本題資訊" subtitle="主持人公布結果後，玩家端會即時切到結果頁。">
+      <div className="grid-2 admin-two-column">
+        <SectionCard title="本題資訊" subtitle="主持人公布結果後，玩家端會同步切到結果頁。">
           {question ? (
             <div className="stack-md">
-              <div className="result-box">
+              <div className="result-box result-box--compact">
                 <strong>Q{game.currentRound}</strong>
                 <p>{question.prompt}</p>
               </div>
               <ul className="plain-list">
-                <li>模式：{game.mode === "competition" ? "競賽模式" : "淘汰賽模式"}</li>
-                <li>已送出：{submittedCount} 人</li>
-                <li>
-                  可參與人數：
-                  {game.mode === "survival" ? alivePlayers.length : validPlayers.length} 人
-                </li>
-                <li>正確答案：公布後由系統自動計算本輪結果</li>
+                {question.options.map((option, index) => (
+                  <li key={option}>
+                    {String.fromCharCode(65 + index)}. {option}
+                  </li>
+                ))}
               </ul>
             </div>
           ) : (
@@ -161,27 +171,23 @@ export function AdminControlPage() {
 
         <SectionCard
           title={game.mode === "competition" ? "即時前 10 名" : "目前存活名單"}
-          subtitle="無效玩家已自動排除。"
+          subtitle="無效玩家會自動排除。"
           aside={<Link to="/admin/players">管理玩家</Link>}
         >
           <RankList
-            players={
-              game.mode === "competition"
-                ? leaderboard
-                : leaderboard.filter((player) => player.status !== "eliminated")
-            }
+            players={game.mode === "competition" ? leaderboard : leaderboard.filter((player) => player.status !== "eliminated")}
             showMeta={false}
             showScore={game.mode === "competition"}
           />
         </SectionCard>
       </div>
 
-      <SectionCard title="輪次紀錄" subtitle="淘汰賽可在這裡看到每輪剩餘存活與淘汰人數。">
+      <SectionCard title="每輪紀錄" subtitle="淘汰賽可查看每一輪剩餘與淘汰人數。">
         <div className="table-card">
           <table>
             <thead>
               <tr>
-                <th>輪次</th>
+                <th>回合</th>
                 <th>公布時間</th>
                 <th>存活</th>
                 <th>淘汰</th>
@@ -190,7 +196,7 @@ export function AdminControlPage() {
             <tbody>
               {roundHistory.map((item) => (
                 <tr key={item.roundNo}>
-                  <td>第 {item.roundNo} 輪</td>
+                  <td>第 {item.roundNo} 題</td>
                   <td>{item.publishedAt ? new Date(item.publishedAt).toLocaleString("zh-TW") : "-"}</td>
                   <td>{item.aliveCount ?? "-"}</td>
                   <td>{item.eliminatedCount ?? "-"}</td>

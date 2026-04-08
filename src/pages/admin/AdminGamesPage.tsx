@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import QRCode from "qrcode";
 import { MetricCard } from "../../components/MetricCard";
 import { SectionCard } from "../../components/SectionCard";
-import { fetchGames, fetchPlayers, fetchQuestions } from "../../lib/gameApi";
-import type { LiveGame, Player, Question } from "../../types/domain";
+import {
+  deleteGameRecord,
+  fetchGames,
+  fetchPlayers,
+  fetchQuestionBanks
+} from "../../lib/gameApi";
+import type { LiveGame, Player, QuestionBank } from "../../types/domain";
 
 function getPlayerJoinUrl(joinCode: string) {
   if (typeof window === "undefined") {
@@ -22,7 +27,7 @@ function formatStatus(status: LiveGame["status"]) {
   const map: Record<LiveGame["status"], string> = {
     draft: "草稿",
     registering: "報名中",
-    live_question: "作答中",
+    live_question: "答題中",
     round_result: "公布結果",
     ended: "已結束"
   };
@@ -30,14 +35,29 @@ function formatStatus(status: LiveGame["status"]) {
 }
 
 export function AdminGamesPage() {
+  const navigate = useNavigate();
   const [games, setGames] = useState<LiveGame[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
-  const [questions, setQuestions] = useState<Question[]>([]);
+  const [banks, setBanks] = useState<QuestionBank[]>([]);
   const [error, setError] = useState("");
   const [selectedGame, setSelectedGame] = useState<LiveGame | null>(null);
   const [qrCodeUrl, setQrCodeUrl] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+
+  async function loadDashboard() {
+    const [loadedGames, loadedBanks] = await Promise.all([fetchGames(), fetchQuestionBanks()]);
+    setGames(loadedGames);
+    setBanks(loadedBanks);
+    setSelectedGame((current) => loadedGames.find((game) => game.id === current?.id) ?? loadedGames[0] ?? null);
+
+    if (loadedGames[0]) {
+      const loadedPlayers = await fetchPlayers(loadedGames[0].id);
+      setPlayers(loadedPlayers);
+    } else {
+      setPlayers([]);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -46,23 +66,10 @@ export function AdminGamesPage() {
       try {
         setError("");
         setIsLoading(true);
-        const [loadedGames, loadedQuestions] = await Promise.all([fetchGames(), fetchQuestions()]);
-
-        if (cancelled) {
-          return;
-        }
-
-        setGames(loadedGames);
-        setQuestions(loadedQuestions);
-        setSelectedGame((current) => {
-          if (current) {
-            return loadedGames.find((game) => game.id === current.id) ?? loadedGames[0] ?? null;
-          }
-          return loadedGames[0] ?? null;
-        });
+        await loadDashboard();
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "後台資料載入失敗。");
+          setError(loadError instanceof Error ? loadError.message : "讀取場次資料失敗。");
         }
       } finally {
         if (!cancelled) {
@@ -80,56 +87,23 @@ export function AdminGamesPage() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadPlayers() {
-      if (!games[0]) {
-        setPlayers([]);
-        return;
-      }
-
-      try {
-        const loadedPlayers = await fetchPlayers(games[0].id);
-        if (!cancelled) {
-          setPlayers(loadedPlayers);
-        }
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "玩家資料載入失敗。");
-        }
-      }
-    }
-
-    void loadPlayers();
-    return () => {
-      cancelled = true;
-    };
-  }, [games]);
-
-  useEffect(() => {
-    let cancelled = false;
-
     async function generateQrCode() {
       if (!selectedGame) {
         setQrCodeUrl("");
         return;
       }
 
-      try {
-        const dataUrl = await QRCode.toDataURL(getPlayerJoinUrl(selectedGame.joinCode), {
-          width: 220,
-          margin: 1,
-          color: {
-            dark: "#7f140d",
-            light: "#fffdf8"
-          }
-        });
+      const dataUrl = await QRCode.toDataURL(getPlayerJoinUrl(selectedGame.joinCode), {
+        width: 220,
+        margin: 1,
+        color: {
+          dark: "#7f140d",
+          light: "#fffdf8"
+        }
+      });
 
-        if (!cancelled) {
-          setQrCodeUrl(dataUrl);
-        }
-      } catch {
-        if (!cancelled) {
-          setQrCodeUrl("");
-        }
+      if (!cancelled) {
+        setQrCodeUrl(dataUrl);
       }
     }
 
@@ -140,6 +114,10 @@ export function AdminGamesPage() {
   }, [selectedGame]);
 
   const invalidPlayers = useMemo(() => players.filter((player) => !player.valid).length, [players]);
+  const totalQuestions = useMemo(
+    () => banks.reduce((sum, bank) => sum + (bank.questionCount ?? 0), 0),
+    [banks]
+  );
   const joinUrl = selectedGame ? getPlayerJoinUrl(selectedGame.joinCode) : "";
 
   async function handleCopyLink() {
@@ -147,12 +125,18 @@ export function AdminGamesPage() {
       return;
     }
 
+    await navigator.clipboard.writeText(joinUrl);
+    setCopyMessage("玩家連結已複製。");
+    window.setTimeout(() => setCopyMessage(""), 2200);
+  }
+
+  async function handleDelete(gameId: string) {
     try {
-      await navigator.clipboard.writeText(joinUrl);
-      setCopyMessage("玩家連結已複製。");
-      window.setTimeout(() => setCopyMessage(""), 2200);
-    } catch {
-      setCopyMessage("複製失敗，請手動選取網址。");
+      setError("");
+      await deleteGameRecord(gameId);
+      await loadDashboard();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "刪除場次失敗。");
     }
   }
 
@@ -161,7 +145,7 @@ export function AdminGamesPage() {
       <section className="player-stage">
         <p className="eyebrow">主持人後台 / 場次總覽</p>
         <h1>春酒遊戲控制首頁</h1>
-        <div className="cta-row">
+        <div className="admin-nav-row">
           <Link className="button button--primary" to="/admin/games/new">
             建立新場次
           </Link>
@@ -181,18 +165,18 @@ export function AdminGamesPage() {
       </section>
 
       {error ? <p className="inline-error">{error}</p> : null}
-      {isLoading ? <p className="inline-success">正在載入場次資料...</p> : null}
+      {isLoading ? <p className="inline-success">正在讀取場次資料...</p> : null}
 
       <div className="grid-4">
         <MetricCard label="場次數量" value={games.length} tone="accent" />
         <MetricCard label="玩家數量" value={players.length} />
-        <MetricCard label="題庫題數" value={questions.length} />
+        <MetricCard label="題庫題數" value={totalQuestions} />
         <MetricCard label="無效玩家" value={invalidPlayers} tone="danger" />
       </div>
 
-      <div className="grid-2">
-        <SectionCard title="快速入口" subtitle="題庫管理和匯入題目都放在這裡。">
-          <div className="cta-row">
+      <div className="grid-2 admin-two-column">
+        <SectionCard title="快速入口" subtitle="題庫管理與匯入題目都在這裡。">
+          <div className="button-row">
             <Link className="button button--primary" to="/admin/questions">
               新增 / 編輯題目
             </Link>
@@ -202,24 +186,29 @@ export function AdminGamesPage() {
           </div>
         </SectionCard>
 
-        <SectionCard title="玩家入場 QR code" subtitle="選一個場次，玩家掃碼後就能直接填資料加入，不必再輸入加入碼。">
+        <SectionCard title="玩家入場 QR code" subtitle="掃碼後會直接進入該場次的資料填寫頁。">
           {selectedGame ? (
             <div className="stack-md">
               <div className="pill-row">
                 <span className="pill">目前場次：{selectedGame.title}</span>
                 <span className="pill">模式：{formatMode(selectedGame.mode)}</span>
+                <span className="pill">題庫：{selectedGame.bankTitle ?? "未指定"}</span>
                 <span className="pill">狀態：{formatStatus(selectedGame.status)}</span>
               </div>
+
               {qrCodeUrl ? (
                 <div className="qr-card">
                   <img alt={`${selectedGame.title} 玩家入場 QR code`} className="qr-preview" src={qrCodeUrl} />
                 </div>
               ) : null}
+
               <label className="form-grid">
                 <span className="status-note">玩家連結</span>
                 <input className="mono-input" readOnly value={joinUrl} />
               </label>
+
               {copyMessage ? <p className="inline-success">{copyMessage}</p> : null}
+
               <div className="button-row">
                 <button className="button button--primary" onClick={() => void handleCopyLink()} type="button">
                   複製玩家連結
@@ -234,12 +223,12 @@ export function AdminGamesPage() {
               </div>
             </div>
           ) : (
-            <p>請先建立一個場次，右側才會顯示玩家入場 QR code。</p>
+            <p>請先建立場次。</p>
           )}
         </SectionCard>
       </div>
 
-      <SectionCard title="場次列表" subtitle="點選某一場即可切換右側的玩家 QR code。">
+      <SectionCard title="場次列表" subtitle="可直接編輯、刪除場次，也能查看每場使用的題庫。">
         <div className="table-card">
           <table>
             <thead>
@@ -247,8 +236,10 @@ export function AdminGamesPage() {
                 <th>場次名稱</th>
                 <th>模式</th>
                 <th>狀態</th>
+                <th>題庫</th>
                 <th>題目數</th>
                 <th>玩家入口</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -261,6 +252,7 @@ export function AdminGamesPage() {
                   </td>
                   <td>{formatMode(game.mode)}</td>
                   <td>{formatStatus(game.status)}</td>
+                  <td>{game.bankTitle ?? "-"}</td>
                   <td>{game.questionCount}</td>
                   <td>
                     <div className="table-actions">
@@ -270,6 +262,16 @@ export function AdminGamesPage() {
                       <a href={getPlayerJoinUrl(game.joinCode)} rel="noreferrer" target="_blank">
                         開玩家頁
                       </a>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="table-actions">
+                      <button onClick={() => navigate(`/admin/games/new?gameId=${game.id}`)} type="button">
+                        編輯
+                      </button>
+                      <button onClick={() => void handleDelete(game.id)} type="button">
+                        刪除
+                      </button>
                     </div>
                   </td>
                 </tr>

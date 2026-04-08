@@ -1,5 +1,8 @@
 import {
+  createQuestionBank,
   createGame,
+  deleteGame,
+  deleteQuestionBank,
   deleteQuestion,
   endGame,
   getGameById,
@@ -8,6 +11,7 @@ import {
   getRoundQuestion,
   getControlSnapshot,
   importQuestions,
+  listQuestionBanks,
   listAnswersForRound,
   listQuestions,
   listGames,
@@ -18,16 +22,22 @@ import {
   startGame,
   startNextRound,
   togglePlayerValidity,
+  updateGame,
   updatePlayer,
+  updateQuestionBank,
   upsertQuestion
 } from "./shared/gameService.mjs";
 import { json, requireAdmin } from "./shared/supabaseAdmin.mjs";
 
 const actions = {
+  createQuestionBank,
   createGame,
+  deleteGame,
+  deleteQuestionBank,
   getGameById,
   getGameByJoinCode,
   getPlayerById,
+  listQuestionBanks,
   listGames,
   listPlayers,
   listAnswersForRound,
@@ -40,8 +50,10 @@ const actions = {
   startNextRound,
   resolveRound,
   endGame,
+  updateGame,
   updatePlayer,
   togglePlayerValidity,
+  updateQuestionBank,
   upsertQuestion,
   deleteQuestion,
   importQuestions
