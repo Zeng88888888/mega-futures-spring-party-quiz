@@ -464,7 +464,7 @@ export async function listJoinableGames() {
   const { data, error } = await supabase
     .from("games")
     .select(GAME_SELECT)
-    .in("status", ["draft", "registering", "live_question", "round_result"])
+    .in("status", ["draft", "registering"])
     .order("created_at", { ascending: false });
 
   if (error) {

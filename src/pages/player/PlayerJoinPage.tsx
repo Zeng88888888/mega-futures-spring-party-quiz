@@ -49,7 +49,36 @@ export function PlayerJoinPage() {
 
         setGames(availableGames);
         if (presetJoinCode) {
-          setSelectedGame(availableGames.find((game) => game.joinCode === presetJoinCode) ?? null);
+          const matchedGame = availableGames.find((game) => game.joinCode === presetJoinCode) ?? null;
+          if (matchedGame) {
+            setSelectedGame(matchedGame);
+          } else {
+            const stats = await fetchJoinStats(presetJoinCode);
+            if (cancelled) {
+              return;
+            }
+
+            if (stats.game) {
+              setSelectedGame({
+                id: stats.game.id,
+                title: stats.game.title,
+                mode: stats.game.mode as LiveGame["mode"],
+                status: stats.game.status as LiveGame["status"],
+                bankId: "",
+                bankTitle: "",
+                questionCount: stats.game.questionCount,
+                currentRound: 0,
+                joinCode: presetJoinCode,
+                competitionSeconds: null,
+                survivalThreshold: null,
+                leaderboardSize: 10,
+                startedAt: null,
+                endedAt: null
+              });
+            } else {
+              setSelectedGame(null);
+            }
+          }
         } else {
           setSelectedGame(availableGames[0] ?? null);
         }
