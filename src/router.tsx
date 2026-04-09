@@ -1,19 +1,59 @@
+import { Suspense, lazy } from "react";
 import { Navigate, NavLink, Outlet, createBrowserRouter, useLocation } from "react-router-dom";
-import { HomePage } from "./pages/HomePage";
-import { PlayerJoinPage } from "./pages/player/PlayerJoinPage";
-import { PlayerWaitingPage } from "./pages/player/PlayerWaitingPage";
-import { PlayerQuestionPage } from "./pages/player/PlayerQuestionPage";
-import { PlayerRoundResultPage } from "./pages/player/PlayerRoundResultPage";
-import { PlayerFinalPage } from "./pages/player/PlayerFinalPage";
-import { PlayerEliminatedPage } from "./pages/player/PlayerEliminatedPage";
-import { AdminLoginPage } from "./pages/admin/AdminLoginPage";
-import { AdminGamesPage } from "./pages/admin/AdminGamesPage";
-import { AdminGameBuilderPage } from "./pages/admin/AdminGameBuilderPage";
-import { AdminControlPage } from "./pages/admin/AdminControlPage";
-import { AdminPlayersPage } from "./pages/admin/AdminPlayersPage";
-import { AdminQuestionBankPage } from "./pages/admin/AdminQuestionBankPage";
-import { AdminImportPage } from "./pages/admin/AdminImportPage";
 import { hasAdminSession } from "./lib/adminSession";
+
+const HomePage = lazy(() => import("./pages/HomePage").then((module) => ({ default: module.HomePage })));
+const PlayerJoinPage = lazy(() =>
+  import("./pages/player/PlayerJoinPage").then((module) => ({ default: module.PlayerJoinPage }))
+);
+const PlayerWaitingPage = lazy(() =>
+  import("./pages/player/PlayerWaitingPage").then((module) => ({ default: module.PlayerWaitingPage }))
+);
+const PlayerQuestionPage = lazy(() =>
+  import("./pages/player/PlayerQuestionPage").then((module) => ({ default: module.PlayerQuestionPage }))
+);
+const PlayerRoundResultPage = lazy(() =>
+  import("./pages/player/PlayerRoundResultPage").then((module) => ({ default: module.PlayerRoundResultPage }))
+);
+const PlayerFinalPage = lazy(() =>
+  import("./pages/player/PlayerFinalPage").then((module) => ({ default: module.PlayerFinalPage }))
+);
+const PlayerEliminatedPage = lazy(() =>
+  import("./pages/player/PlayerEliminatedPage").then((module) => ({ default: module.PlayerEliminatedPage }))
+);
+const AdminLoginPage = lazy(() =>
+  import("./pages/admin/AdminLoginPage").then((module) => ({ default: module.AdminLoginPage }))
+);
+const AdminGamesPage = lazy(() =>
+  import("./pages/admin/AdminGamesPage").then((module) => ({ default: module.AdminGamesPage }))
+);
+const AdminGameBuilderPage = lazy(() =>
+  import("./pages/admin/AdminGameBuilderPage").then((module) => ({ default: module.AdminGameBuilderPage }))
+);
+const AdminControlPage = lazy(() =>
+  import("./pages/admin/AdminControlPage").then((module) => ({ default: module.AdminControlPage }))
+);
+const AdminPlayersPage = lazy(() =>
+  import("./pages/admin/AdminPlayersPage").then((module) => ({ default: module.AdminPlayersPage }))
+);
+const AdminQuestionBankPage = lazy(() =>
+  import("./pages/admin/AdminQuestionBankPage").then((module) => ({ default: module.AdminQuestionBankPage }))
+);
+const AdminImportPage = lazy(() =>
+  import("./pages/admin/AdminImportPage").then((module) => ({ default: module.AdminImportPage }))
+);
+
+function RouteFallback() {
+  return (
+    <div className="page-loading">
+      <p>頁面載入中...</p>
+    </div>
+  );
+}
+
+function withLazyPage(element: React.ReactNode) {
+  return <Suspense fallback={<RouteFallback />}>{element}</Suspense>;
+}
 
 function RootLayout() {
   const location = useLocation();
@@ -56,24 +96,24 @@ export const router = createBrowserRouter([
     path: "/",
     element: <RootLayout />,
     children: [
-      { index: true, element: <HomePage /> },
-      { path: "player/join", element: <PlayerJoinPage /> },
-      { path: "player/waiting", element: <PlayerWaitingPage /> },
-      { path: "player/question", element: <PlayerQuestionPage /> },
-      { path: "player/round-result", element: <PlayerRoundResultPage /> },
-      { path: "player/final", element: <PlayerFinalPage /> },
-      { path: "player/eliminated", element: <PlayerEliminatedPage /> },
-      { path: "admin/login", element: <AdminLoginPage /> },
+      { index: true, element: withLazyPage(<HomePage />) },
+      { path: "player/join", element: withLazyPage(<PlayerJoinPage />) },
+      { path: "player/waiting", element: withLazyPage(<PlayerWaitingPage />) },
+      { path: "player/question", element: withLazyPage(<PlayerQuestionPage />) },
+      { path: "player/round-result", element: withLazyPage(<PlayerRoundResultPage />) },
+      { path: "player/final", element: withLazyPage(<PlayerFinalPage />) },
+      { path: "player/eliminated", element: withLazyPage(<PlayerEliminatedPage />) },
+      { path: "admin/login", element: withLazyPage(<AdminLoginPage />) },
       {
         path: "admin",
         element: <AdminGuard />,
         children: [
-          { path: "games", element: <AdminGamesPage /> },
-          { path: "games/new", element: <AdminGameBuilderPage /> },
-          { path: "control", element: <AdminControlPage /> },
-          { path: "players", element: <AdminPlayersPage /> },
-          { path: "questions", element: <AdminQuestionBankPage /> },
-          { path: "import", element: <AdminImportPage /> }
+          { path: "games", element: withLazyPage(<AdminGamesPage />) },
+          { path: "games/new", element: withLazyPage(<AdminGameBuilderPage />) },
+          { path: "control", element: withLazyPage(<AdminControlPage />) },
+          { path: "players", element: withLazyPage(<AdminPlayersPage />) },
+          { path: "questions", element: withLazyPage(<AdminQuestionBankPage />) },
+          { path: "import", element: withLazyPage(<AdminImportPage />) }
         ]
       }
     ]
