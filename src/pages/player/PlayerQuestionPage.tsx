@@ -44,6 +44,7 @@ export function PlayerQuestionPage() {
   const [answer, setAnswer] = useState<PlayerAnswer | null>(null);
   const [error, setError] = useState("");
   const [remainingMs, setRemainingMs] = useState<number | null>(null);
+  const [prepRemainingMs, setPrepRemainingMs] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -110,6 +111,7 @@ export function PlayerQuestionPage() {
   useEffect(() => {
     if (!session || !game || !question || game.mode !== "competition" || !game.startedAt || !game.competitionSeconds) {
       setRemainingMs(null);
+      setPrepRemainingMs(null);
       return;
     }
 
@@ -117,11 +119,14 @@ export function PlayerQuestionPage() {
     const durationMs = Math.max(game.competitionSeconds * 1000, 1000);
 
     const update = () => {
-      const elapsedMs = Math.max(0, Date.now() - startedAtMs);
+      const now = Date.now();
+      const prepMs = Math.max(0, startedAtMs - now);
+      const elapsedMs = Math.max(0, now - startedAtMs);
       const nextRemainingMs = Math.max(0, durationMs - elapsedMs);
+      setPrepRemainingMs(prepMs);
       setRemainingMs(nextRemainingMs);
 
-      if (nextRemainingMs === 0 && !answer) {
+      if (prepMs === 0 && nextRemainingMs === 0 && !answer) {
         setAnswer(
           createTimeoutAnswer(session.playerId, question.id, game.currentRound, durationMs)
         );
@@ -142,8 +147,21 @@ export function PlayerQuestionPage() {
     return Math.ceil(remainingMs / 1000);
   }, [remainingMs]);
 
+  const prepSeconds = useMemo(() => {
+    if (prepRemainingMs === null || prepRemainingMs <= 0) {
+      return null;
+    }
+
+    return Math.ceil(prepRemainingMs / 1000);
+  }, [prepRemainingMs]);
+
+  const isPreparePhase =
+    game?.mode === "competition" &&
+    game.startedAt &&
+    new Date(game.startedAt).getTime() > Date.now();
+
   async function submit(option: "A" | "B" | "C" | "D") {
-    if (!session || !game || !question || answer || isSubmitting) {
+    if (!session || !game || !question || answer || isSubmitting || isPreparePhase) {
       return;
     }
 
@@ -211,7 +229,9 @@ export function PlayerQuestionPage() {
             第 {game.currentRound} / {game.questionCount} 題
           </span>
           {game.mode === "competition" ? (
-            <span className="pill pill--accent">剩餘 {remainingSeconds ?? game.competitionSeconds} 秒</span>
+            <span className="pill pill--accent">
+              {isPreparePhase ? `即將開始 ${prepSeconds ?? 1} 秒` : `剩餘 ${remainingSeconds ?? game.competitionSeconds} 秒`}
+            </span>
           ) : (
             <span className="pill pill--accent">不限秒數</span>
           )}
@@ -240,6 +260,11 @@ export function PlayerQuestionPage() {
                   : "答案已送出，等待主持人公布結果。"}
             </p>
             {elapsedSeconds ? <p>本題用時：{elapsedSeconds} 秒</p> : null}
+          </div>
+        ) : isPreparePhase ? (
+          <div className="result-box">
+            <strong>{prepSeconds ?? 1}</strong>
+            <p>全體共同倒數中，倒數結束後才會一起開放作答。</p>
           </div>
         ) : (
           <div className="answer-grid">

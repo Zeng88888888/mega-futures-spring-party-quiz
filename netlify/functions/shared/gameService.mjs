@@ -2,6 +2,7 @@
 
 const DEFAULT_COMPETITION_SECONDS = 10;
 const DEFAULT_BANK_TITLE = "題庫一";
+const PREP_COUNTDOWN_SECONDS = 3;
 
 const GAME_SELECT = `
   id,
@@ -911,12 +912,17 @@ export async function startGame(payload) {
   }
 
   const nextRound = game.current_round > 0 ? game.current_round : 1;
+  const roundStartsAt =
+    game.mode === "competition"
+      ? new Date(Date.now() + PREP_COUNTDOWN_SECONDS * 1000).toISOString()
+      : new Date().toISOString();
+
   const { error } = await supabase
     .from("games")
     .update({
       status: "live_question",
       current_round: nextRound,
-      started_at: new Date().toISOString(),
+      started_at: roundStartsAt,
       ended_at: null
     })
     .eq("id", payload.gameId);
@@ -944,12 +950,17 @@ export async function startNextRound(payload) {
     return;
   }
 
+  const roundStartsAt =
+    game.mode === "competition"
+      ? new Date(Date.now() + PREP_COUNTDOWN_SECONDS * 1000).toISOString()
+      : new Date().toISOString();
+
   const { error } = await supabase
     .from("games")
     .update({
       status: "live_question",
       current_round: game.current_round + 1,
-      started_at: new Date().toISOString()
+      started_at: roundStartsAt
     })
     .eq("id", payload.gameId);
 
@@ -1066,6 +1077,9 @@ export async function submitAnswer(payload) {
 
   if (game.mode === "competition" && game.started_at && game.competition_seconds) {
     const startedAtMs = new Date(game.started_at).getTime();
+    if (answeredAtMs < startedAtMs) {
+      throw new Error("本題尚未開始作答。");
+    }
     const deadlineMs = startedAtMs + game.competition_seconds * 1000;
     if (answeredAtMs > deadlineMs) {
       throw new Error("本題作答時間已結束。");
@@ -1101,6 +1115,14 @@ export async function resolveRound(payload) {
   const question = await fetchQuestionForRound(payload.gameId, game.current_round);
   if (!question) {
     throw new Error("找不到本輪題目。");
+  }
+
+  if (
+    game.mode === "competition" &&
+    game.started_at &&
+    new Date(game.started_at).getTime() > Date.now()
+  ) {
+    throw new Error("共同倒數尚未結束，暫時不能公布結果。");
   }
 
   const players = await fetchPlayers(payload.gameId);
