@@ -4,7 +4,22 @@ import { RankList } from "../../components/RankList";
 import { SectionCard } from "../../components/SectionCard";
 import { fetchPlayerSnapshot, subscribeToGameRealtime } from "../../lib/gameApi";
 import { getPlayerSession } from "../../lib/playerSession";
-import type { LiveGame, Player, PlayerRoundStatus, Question, RoundResult } from "../../types/domain";
+import type {
+  LiveGame,
+  Player,
+  PlayerAnswer,
+  PlayerRoundStatus,
+  Question,
+  RoundResult
+} from "../../types/domain";
+
+function formatElapsedSeconds(responseMs?: number | null) {
+  if (responseMs === null || responseMs === undefined) {
+    return null;
+  }
+
+  return (responseMs / 1000).toFixed(2);
+}
 
 export function PlayerRoundResultPage() {
   const navigate = useNavigate();
@@ -12,6 +27,7 @@ export function PlayerRoundResultPage() {
   const [game, setGame] = useState<LiveGame | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
   const [question, setQuestion] = useState<Question | null>(null);
+  const [answer, setAnswer] = useState<PlayerAnswer | null>(null);
   const [leaderboard, setLeaderboard] = useState<Player[]>([]);
   const [roundResult, setRoundResult] = useState<RoundResult | null>(null);
   const [playerRoundStatus, setPlayerRoundStatus] = useState<PlayerRoundStatus | null>(null);
@@ -21,8 +37,8 @@ export function PlayerRoundResultPage() {
       navigate("/player/join");
       return;
     }
-    const currentSession = session;
 
+    const currentSession = session;
     let cancelled = false;
 
     async function load() {
@@ -44,6 +60,7 @@ export function PlayerRoundResultPage() {
       setGame(snapshot.game);
       setPlayer(snapshot.player);
       setQuestion(snapshot.question);
+      setAnswer(snapshot.answer);
       setLeaderboard(snapshot.leaderboard);
       setRoundResult(snapshot.roundResult);
       setPlayerRoundStatus(snapshot.playerRoundStatus);
@@ -79,6 +96,13 @@ export function PlayerRoundResultPage() {
     );
   }
 
+  const optionIndex =
+    question.correctOption && /^[A-D]$/.test(question.correctOption)
+      ? question.correctOption.charCodeAt(0) - 65
+      : -1;
+  const correctOptionLabel = optionIndex >= 0 ? question.options[optionIndex] : "";
+  const elapsedSeconds = formatElapsedSeconds(answer?.responseMs);
+
   return (
     <div className="player-layout">
       <section className="player-stage">
@@ -91,7 +115,7 @@ export function PlayerRoundResultPage() {
         <SectionCard title="正確答案">
           <div className="result-box">
             <strong>{question.correctOption}</strong>
-            <p>{question.options[question.correctOption.charCodeAt(0) - 65]}</p>
+            <p>{correctOptionLabel}</p>
           </div>
         </SectionCard>
 
@@ -111,7 +135,16 @@ export function PlayerRoundResultPage() {
         )}
       </div>
 
-      {game.mode === "survival" ? (
+      {game.mode === "competition" ? (
+        <SectionCard title="你的本題成績">
+          <ul className="plain-list">
+            <li>本題結果：{answer?.answerStatus ?? "-"}</li>
+            <li>本題得分：{answer?.score ?? 0} 分</li>
+            <li>累積總分：{player?.score ?? 0} 分</li>
+            <li>本題用時：{elapsedSeconds ? `${elapsedSeconds} 秒` : "-"}</li>
+          </ul>
+        </SectionCard>
+      ) : (
         <div className="grid-2">
           <SectionCard title="目前存活名單" subtitle="主持人公布後，仍可繼續下一輪的玩家。">
             {alivePlayers.length > 0 ? (
@@ -129,14 +162,14 @@ export function PlayerRoundResultPage() {
             )}
           </SectionCard>
         </div>
-      ) : null}
+      )}
 
       {player ? (
         <SectionCard title="你的目前狀態">
           <ul className="plain-list">
             <li>暱稱：{player.nickname}</li>
             <li>玩家狀態：{player.status}</li>
-            <li>本題結果：{playerRoundStatus?.answerStatus ?? "-"}</li>
+            <li>本題結果：{playerRoundStatus?.answerStatus ?? answer?.answerStatus ?? "-"}</li>
           </ul>
         </SectionCard>
       ) : null}

@@ -2,7 +2,7 @@
 
 const DEFAULT_COMPETITION_SECONDS = 10;
 const DEFAULT_BANK_TITLE = "題庫一";
-const PREP_COUNTDOWN_SECONDS = 3;
+const PREP_COUNTDOWN_SECONDS = 10;
 
 const GAME_SELECT = `
   id,
@@ -1142,6 +1142,8 @@ export async function resolveRound(payload) {
   let aliveCount = 0;
   let eliminatedCount = 0;
 
+  const playerUpdates = [];
+
   for (const player of activePlayers) {
     const existingAnswer = answerMap.get(player.id);
     const answeredAtMs = existingAnswer?.answered_at ? new Date(existingAnswer.answered_at).getTime() : null;
@@ -1205,18 +1207,12 @@ export async function resolveRound(payload) {
       eliminated_in_round: eliminatedInRound
     });
 
-    const { error: playerUpdateError } = await supabase
-      .from("players")
-      .update({
-        status: nextStatus,
-        total_score: nextTotalScore,
-        total_response_ms: nextTotalResponseMs
-      })
-      .eq("id", player.id);
-
-    if (playerUpdateError) {
-      throw playerUpdateError;
-    }
+    playerUpdates.push({
+      id: player.id,
+      status: nextStatus,
+      total_score: nextTotalScore,
+      total_response_ms: nextTotalResponseMs
+    });
   }
 
   if (answerUpserts.length > 0) {
@@ -1232,6 +1228,27 @@ export async function resolveRound(payload) {
       .upsert(roundStatusUpserts, { onConflict: "question_id,player_id" });
     if (error) {
       throw error;
+    }
+  }
+
+  if (playerUpdates.length > 0) {
+    const results = await Promise.all(
+      playerUpdates.map((playerUpdate) =>
+        supabase
+          .from("players")
+          .update({
+            status: playerUpdate.status,
+            total_score: playerUpdate.total_score,
+            total_response_ms: playerUpdate.total_response_ms
+          })
+          .eq("id", playerUpdate.id)
+      )
+    );
+
+    for (const result of results) {
+      if (result.error) {
+        throw result.error;
+      }
     }
   }
 
