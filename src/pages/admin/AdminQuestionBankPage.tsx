@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { SectionCard } from "../../components/SectionCard";
 import {
@@ -27,6 +27,7 @@ export function AdminQuestionBankPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const bankParam = searchParams.get("bankId") ?? "";
+  const questionEditorRef = useRef<HTMLElement | null>(null);
 
   const [banks, setBanks] = useState<QuestionBank[]>([]);
   const [selectedBankId, setSelectedBankId] = useState("");
@@ -80,6 +81,12 @@ export function AdminQuestionBankPage() {
     void loadQuestions(selectedBankId);
   }, [selectedBankId, banks]);
 
+  function scrollToEditor() {
+    window.setTimeout(() => {
+      questionEditorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  }
+
   function startCreateBank() {
     setSelectedBankId("");
     setBankTitle("");
@@ -106,6 +113,9 @@ export function AdminQuestionBankPage() {
       correctOption: question.correctOption,
       explanation: question.explanation
     });
+    setMessage(`正在編輯題目：${question.prompt.slice(0, 24)}${question.prompt.length > 24 ? "..." : ""}`);
+    setError("");
+    scrollToEditor();
   }
 
   async function saveBank() {
@@ -175,6 +185,7 @@ export function AdminQuestionBankPage() {
     try {
       setError("");
       setMessage("");
+      const isEditing = Boolean(questionForm.id);
       await upsertQuestionRecord({
         ...questionForm,
         bankId: selectedBankId
@@ -182,7 +193,7 @@ export function AdminQuestionBankPage() {
       editQuestion();
       await loadBanks(selectedBankId);
       await loadQuestions(selectedBankId);
-      setMessage(questionForm.id ? "題目已更新。" : "題目已新增。");
+      setMessage(isEditing ? "題目已更新。" : "題目已新增。");
     } catch (submissionError) {
       setError(submissionError instanceof Error ? submissionError.message : "儲存題目失敗，請稍後再試。");
     }
@@ -199,7 +210,7 @@ export function AdminQuestionBankPage() {
       setMessage("");
       await deleteQuestionRecord(id);
       if (questionForm.id === id) {
-        editQuestion();
+        setQuestionForm(emptyQuestionForm);
       }
       await loadBanks(selectedBankId);
       await loadQuestions(selectedBankId);
@@ -323,82 +334,85 @@ export function AdminQuestionBankPage() {
       </div>
 
       <SectionCard
+        aside={questionForm.id ? <span className="pill pill--accent">編輯中</span> : undefined}
         subtitle={selectedBank ? `目前編輯題庫：${selectedBank.title}` : "請先選擇題庫。"}
         title={questionForm.id ? "編輯題目" : "新增題目"}
       >
-        <div className="form-grid">
-          <label>
-            題目
-            <textarea
-              className="textarea"
-              onChange={(event) => setQuestionForm((current) => ({ ...current, content: event.target.value }))}
-              rows={3}
-              value={questionForm.content}
-            />
-          </label>
-          <label>
-            選項 A
-            <input
-              onChange={(event) => setQuestionForm((current) => ({ ...current, optionA: event.target.value }))}
-              value={questionForm.optionA}
-            />
-          </label>
-          <label>
-            選項 B
-            <input
-              onChange={(event) => setQuestionForm((current) => ({ ...current, optionB: event.target.value }))}
-              value={questionForm.optionB}
-            />
-          </label>
-          <label>
-            選項 C
-            <input
-              onChange={(event) => setQuestionForm((current) => ({ ...current, optionC: event.target.value }))}
-              value={questionForm.optionC}
-            />
-          </label>
-          <label>
-            選項 D
-            <input
-              onChange={(event) => setQuestionForm((current) => ({ ...current, optionD: event.target.value }))}
-              value={questionForm.optionD}
-            />
-          </label>
-          <label>
-            正確答案
-            <select
-              onChange={(event) =>
-                setQuestionForm((current) => ({
-                  ...current,
-                  correctOption: event.target.value as "A" | "B" | "C" | "D"
-                }))
-              }
-              value={questionForm.correctOption}
-            >
-              <option value="A">A</option>
-              <option value="B">B</option>
-              <option value="C">C</option>
-              <option value="D">D</option>
-            </select>
-          </label>
-          <label>
-            解說
-            <textarea
-              className="textarea"
-              onChange={(event) => setQuestionForm((current) => ({ ...current, explanation: event.target.value }))}
-              rows={3}
-              value={questionForm.explanation}
-            />
-          </label>
-          <div className="button-row">
-            <button className="button button--primary" onClick={() => void saveQuestion()} type="button">
-              {questionForm.id ? "儲存題目" : "新增題目"}
-            </button>
-            <button className="button button--ghost" onClick={() => editQuestion()} type="button">
-              清空表單
-            </button>
+        <section ref={questionEditorRef}>
+          <div className="form-grid">
+            <label>
+              題目
+              <textarea
+                className="textarea"
+                onChange={(event) => setQuestionForm((current) => ({ ...current, content: event.target.value }))}
+                rows={3}
+                value={questionForm.content}
+              />
+            </label>
+            <label>
+              選項 A
+              <input
+                onChange={(event) => setQuestionForm((current) => ({ ...current, optionA: event.target.value }))}
+                value={questionForm.optionA}
+              />
+            </label>
+            <label>
+              選項 B
+              <input
+                onChange={(event) => setQuestionForm((current) => ({ ...current, optionB: event.target.value }))}
+                value={questionForm.optionB}
+              />
+            </label>
+            <label>
+              選項 C
+              <input
+                onChange={(event) => setQuestionForm((current) => ({ ...current, optionC: event.target.value }))}
+                value={questionForm.optionC}
+              />
+            </label>
+            <label>
+              選項 D
+              <input
+                onChange={(event) => setQuestionForm((current) => ({ ...current, optionD: event.target.value }))}
+                value={questionForm.optionD}
+              />
+            </label>
+            <label>
+              正確答案
+              <select
+                onChange={(event) =>
+                  setQuestionForm((current) => ({
+                    ...current,
+                    correctOption: event.target.value as "A" | "B" | "C" | "D"
+                  }))
+                }
+                value={questionForm.correctOption}
+              >
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+                <option value="D">D</option>
+              </select>
+            </label>
+            <label>
+              解說
+              <textarea
+                className="textarea"
+                onChange={(event) => setQuestionForm((current) => ({ ...current, explanation: event.target.value }))}
+                rows={3}
+                value={questionForm.explanation}
+              />
+            </label>
+            <div className="button-row">
+              <button className="button button--primary" onClick={() => void saveQuestion()} type="button">
+                {questionForm.id ? "儲存題目" : "新增題目"}
+              </button>
+              <button className="button button--ghost" onClick={() => editQuestion()} type="button">
+                清空表單
+              </button>
+            </div>
           </div>
-        </div>
+        </section>
       </SectionCard>
     </div>
   );
