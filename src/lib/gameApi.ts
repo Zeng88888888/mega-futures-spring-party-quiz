@@ -250,7 +250,15 @@ export async function fetchPlayers(gameId: string) {
 
 export async function fetchQuestions(bankId?: string) {
   const result = await runAdminAction<{ questions: QuestionRow[] }>("listQuestions", bankId ? { bankId } : {});
-  return (result.questions ?? []).map(mapQuestion);
+  return (result.questions ?? []).map((question, index) => mapQuestion(question, index + 1));
+}
+
+export async function reorderQuestionsRecord(bankId: string, questionIds: string[]) {
+  await runAdminAction("reorderQuestions", { bankId, questionIds });
+}
+
+export async function shuffleQuestionsRecord(bankId: string) {
+  await runAdminAction("shuffleQuestions", { bankId });
 }
 
 export async function upsertQuestionRecord(payload: {

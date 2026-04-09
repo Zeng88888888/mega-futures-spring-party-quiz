@@ -7,6 +7,8 @@ import {
   deleteQuestionRecord,
   fetchQuestionBanks,
   fetchQuestions,
+  reorderQuestionsRecord,
+  shuffleQuestionsRecord,
   updateQuestionBankRecord,
   upsertQuestionRecord
 } from "../../lib/gameApi";
@@ -113,7 +115,7 @@ export function AdminQuestionBankPage() {
       correctOption: question.correctOption,
       explanation: question.explanation
     });
-    setMessage(`正在編輯題目：${question.prompt.slice(0, 24)}${question.prompt.length > 24 ? "..." : ""}`);
+    setMessage(`正在編輯題目：第 ${question.orderNo ?? "-"} 題`);
     setError("");
     scrollToEditor();
   }
@@ -190,7 +192,7 @@ export function AdminQuestionBankPage() {
         ...questionForm,
         bankId: selectedBankId
       });
-      editQuestion();
+      setQuestionForm(emptyQuestionForm);
       await loadBanks(selectedBankId);
       await loadQuestions(selectedBankId);
       setMessage(isEditing ? "題目已更新。" : "題目已新增。");
@@ -220,12 +222,56 @@ export function AdminQuestionBankPage() {
     }
   }
 
+  async function moveQuestion(index: number, direction: -1 | 1) {
+    const nextIndex = index + direction;
+    if (!selectedBankId || nextIndex < 0 || nextIndex >= questions.length) {
+      return;
+    }
+
+    const reordered = [...questions];
+    [reordered[index], reordered[nextIndex]] = [reordered[nextIndex], reordered[index]];
+
+    try {
+      setError("");
+      setMessage("");
+      await reorderQuestionsRecord(
+        selectedBankId,
+        reordered.map((question) => question.id)
+      );
+      await loadQuestions(selectedBankId);
+      setMessage("題目順序已更新。");
+    } catch (submissionError) {
+      setError(submissionError instanceof Error ? submissionError.message : "更新題目順序失敗，請稍後再試。");
+    }
+  }
+
+  async function shuffleQuestions() {
+    if (!selectedBankId) {
+      return;
+    }
+
+    const confirmed = window.confirm("確定要將此題庫題目順序隨機打亂嗎？");
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setError("");
+      setMessage("");
+      await shuffleQuestionsRecord(selectedBankId);
+      await loadQuestions(selectedBankId);
+      setMessage("題目順序已隨機打亂。");
+    } catch (submissionError) {
+      setError(submissionError instanceof Error ? submissionError.message : "隨機打亂失敗，請稍後再試。");
+    }
+  }
+
   return (
     <div className="admin-layout stack-lg">
       <section className="player-stage">
         <p className="eyebrow">主持人後台 / 題庫管理</p>
         <h1>題庫分類管理</h1>
-        <p className="hero-text">可建立題庫一、題庫二、題庫三等分類，並在各自題庫中管理題目。</p>
+        <p className="hero-text">可建立題庫一、題庫二、題庫三等分類，並在各自題庫中管理題目與排序。</p>
       </section>
 
       {error ? <p className="inline-error">{error}</p> : null}
@@ -293,25 +339,40 @@ export function AdminQuestionBankPage() {
         </SectionCard>
 
         <SectionCard
-          subtitle={selectedBank ? "可在此題庫內增修題目。" : "請先選擇題庫。"}
+          aside={
+            selectedBank ? (
+              <button className="button button--ghost" onClick={() => void shuffleQuestions()} type="button">
+                隨機打亂排序
+              </button>
+            ) : undefined
+          }
+          subtitle={selectedBank ? "可在此題庫內增修題目與調整順序。" : "請先選擇題庫。"}
           title={selectedBank ? `${selectedBank.title} 題目列表` : "題目列表"}
         >
           <div className="table-card">
             <table>
               <thead>
                 <tr>
+                  <th>順序</th>
                   <th>題目</th>
                   <th>正確答案</th>
                   <th>操作</th>
                 </tr>
               </thead>
               <tbody>
-                {questions.map((question) => (
+                {questions.map((question, index) => (
                   <tr key={question.id}>
+                    <td>{question.orderNo ?? index + 1}</td>
                     <td>{question.prompt}</td>
                     <td>{question.correctOption}</td>
                     <td>
                       <div className="table-actions">
+                        <button onClick={() => void moveQuestion(index, -1)} type="button">
+                          上移
+                        </button>
+                        <button onClick={() => void moveQuestion(index, 1)} type="button">
+                          下移
+                        </button>
                         <button onClick={() => editQuestion(question)} type="button">
                           編輯
                         </button>
@@ -324,7 +385,7 @@ export function AdminQuestionBankPage() {
                 ))}
                 {selectedBank && questions.length === 0 ? (
                   <tr>
-                    <td colSpan={3}>此題庫目前還沒有題目。</td>
+                    <td colSpan={4}>此題庫目前還沒有題目。</td>
                   </tr>
                 ) : null}
               </tbody>

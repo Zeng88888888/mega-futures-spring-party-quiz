@@ -110,7 +110,7 @@ async function fetchQuestionsByBank(bankId, limit) {
   const supabase = getSupabaseAdmin();
   let query = supabase
     .from("questions")
-    .select("id, bank_id, content, option_a, option_b, option_c, option_d, correct_option, explanation, is_active")
+    .select("id, bank_id, content, option_a, option_b, option_c, option_d, correct_option, explanation, is_active, created_at")
     .eq("bank_id", bankId)
     .eq("is_active", true)
     .order("created_at", { ascending: true });
@@ -360,6 +360,72 @@ export async function listQuestions(payload = {}) {
   }
 
   return { questions: data ?? [] };
+}
+
+export async function reorderQuestions(payload) {
+  const supabase = getSupabaseAdmin();
+  const bank = await requireQuestionBank(payload.bankId);
+  const questionIds = Array.isArray(payload.questionIds) ? payload.questionIds : [];
+
+  if (questionIds.length === 0) {
+    throw new Error("沒有可排序的題目。");
+  }
+
+  const { data: rows, error } = await supabase
+    .from("questions")
+    .select("id")
+    .eq("bank_id", bank.id)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  const validIds = new Set((rows ?? []).map((row) => row.id));
+  const orderedIds = questionIds.filter((id) => validIds.has(id));
+
+  if (orderedIds.length !== validIds.size) {
+    throw new Error("題目排序資料不完整，請重新整理後再試。");
+  }
+
+  const baseTime = Date.now();
+  for (let index = 0; index < orderedIds.length; index += 1) {
+    const id = orderedIds[index];
+    const createdAt = new Date(baseTime + index * 1000).toISOString();
+    const { error: updateError } = await supabase
+      .from("questions")
+      .update({ created_at: createdAt })
+      .eq("id", id)
+      .eq("bank_id", bank.id);
+
+    if (updateError) {
+      throw updateError;
+    }
+  }
+
+  return { ok: true };
+}
+
+export async function shuffleQuestions(payload) {
+  const supabase = getSupabaseAdmin();
+  const bank = await requireQuestionBank(payload.bankId);
+  const { data, error } = await supabase
+    .from("questions")
+    .select("id")
+    .eq("bank_id", bank.id)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  const ids = (data ?? []).map((row) => row.id);
+  for (let index = ids.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [ids[index], ids[randomIndex]] = [ids[randomIndex], ids[index]];
+  }
+
+  return reorderQuestions({ bankId: bank.id, questionIds: ids });
 }
 
 export async function getJoinStats(payload) {
