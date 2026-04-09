@@ -9,6 +9,14 @@ function formatMode(mode: LiveGame["mode"]) {
   return mode === "competition" ? "競賽模式" : "淘汰賽模式";
 }
 
+function formatElapsedSeconds(responseMs?: number | null) {
+  if (responseMs === null || responseMs === undefined) {
+    return null;
+  }
+
+  return (responseMs / 1000).toFixed(2);
+}
+
 export function PlayerQuestionPage() {
   const navigate = useNavigate();
   const session = getPlayerSession();
@@ -95,6 +103,14 @@ export function PlayerQuestionPage() {
       return;
     }
 
+    const competitionDurationMs = Math.max((game.competitionSeconds ?? 10) * 1000, 1000);
+    const optimisticResponseMs =
+      game.mode === "competition"
+        ? remainingMs !== null
+          ? Math.max(0, competitionDurationMs - remainingMs)
+          : 0
+        : null;
+
     const optimisticAnswer: PlayerAnswer = {
       playerId: currentSession.playerId,
       questionId: question.id,
@@ -102,7 +118,7 @@ export function PlayerQuestionPage() {
       selectedOption: option,
       answerStatus: "wrong",
       isCorrect: false,
-      responseMs: game.mode === "competition" && remainingMs !== null ? Math.max(0, remainingMs) : null,
+      responseMs: optimisticResponseMs,
       score: 0,
       answeredAt: new Date().toISOString()
     };
@@ -120,15 +136,15 @@ export function PlayerQuestionPage() {
     } catch (submissionError) {
       setAnswer(null);
       setIsSubmitting(false);
-      setError(submissionError instanceof Error ? submissionError.message : "送出答案失敗，請再試一次。");
+      setError(submissionError instanceof Error ? submissionError.message : "送出答案失敗，請稍後再試。");
     }
   }
 
   if (!game || !question) {
     return (
       <div className="player-layout">
-        <SectionCard title="載入題目中">
-          <p>正在同步最新題目與作答狀態，請稍候。</p>
+        <SectionCard title="讀取題目中">
+          <p>正在同步最新題目與場次狀態，請稍候。</p>
         </SectionCard>
       </div>
     );
@@ -136,6 +152,7 @@ export function PlayerQuestionPage() {
 
   const answerLocked = Boolean(answer);
   const submittedOption = answer?.selectedOption ?? "-";
+  const elapsedSeconds = game.mode === "competition" ? formatElapsedSeconds(answer?.responseMs) : null;
 
   return (
     <div className="player-layout">
@@ -155,19 +172,20 @@ export function PlayerQuestionPage() {
       </section>
 
       <SectionCard
-        title={answerLocked ? "已送出答案" : "請選擇答案"}
+        title={answerLocked ? "答案已送出" : "請選擇答案"}
         subtitle={
           answerLocked
             ? "答案已鎖定，等待主持人公布結果。"
             : player
-              ? `${player.nickname}，請在確認後點選一個選項。`
+              ? `${player.nickname}，請在題目公布後作答。`
               : undefined
         }
       >
         {answerLocked ? (
           <div className="result-box">
             <strong>{submittedOption}</strong>
-            <p>{isSubmitting ? "答案送出中，已先為你鎖定選項。" : "答案已送出，等待主持人公布結果。"}</p>
+            <p>{isSubmitting ? "答案送出中，請稍候。" : "答案已鎖定，等待主持人公布結果。"}</p>
+            {elapsedSeconds ? <p>本題用時：{elapsedSeconds} 秒</p> : null}
           </div>
         ) : (
           <div className="answer-grid">

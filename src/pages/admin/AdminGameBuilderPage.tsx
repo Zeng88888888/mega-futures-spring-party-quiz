@@ -62,7 +62,7 @@ export function AdminGameBuilderPage() {
         }
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "讀取場次資料失敗。");
+          setError(loadError instanceof Error ? loadError.message : "讀取場次設定失敗，請重新整理後再試。");
         }
       } finally {
         if (!cancelled) {
@@ -109,7 +109,7 @@ export function AdminGameBuilderPage() {
 
       navigate("/admin/games");
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "儲存場次失敗。");
+      setError(submissionError instanceof Error ? submissionError.message : "儲存場次失敗，請稍後再試。");
     } finally {
       setIsSubmitting(false);
     }
@@ -119,12 +119,15 @@ export function AdminGameBuilderPage() {
     <div className="admin-layout stack-lg">
       <section className="player-stage">
         <p className="eyebrow">主持人後台 / 場次設定</p>
-        <h1>{isEditing ? "編輯場次" : "建立新場次"}</h1>
+        <h1>{isEditing ? "更新場次設定" : "建立新場次"}</h1>
         <p className="hero-text">每個場次只能綁定一個題庫，玩家掃 QR code 後會直接進入該場次的建立資料頁。</p>
       </section>
 
-      <SectionCard subtitle="請選擇模式、題庫與題數。" title={isEditing ? "更新場次設定" : "建立場次設定"}>
-        {isLoading ? <p className="inline-success">載入設定中...</p> : null}
+      <SectionCard
+        subtitle="請選擇模式、題庫與題數。"
+        title={isEditing ? "更新場次設定" : "建立場次"}
+      >
+        {isLoading ? <p className="inline-success">讀取場次設定中...</p> : null}
 
         <form className="form-grid form-grid--wide" onSubmit={handleSubmit}>
           <label>
@@ -167,7 +170,7 @@ export function AdminGameBuilderPage() {
           </label>
 
           <label>
-            排行榜名次
+            排行榜顯示名次
             <input
               min={1}
               onChange={(event) => setLeaderboardSize(Number(event.target.value))}
@@ -179,7 +182,7 @@ export function AdminGameBuilderPage() {
           {selectedBank ? (
             <div className="info-box">
               <strong>目前題庫：{selectedBank.title}</strong>
-              <p>{selectedBank.description || "尚未填寫題庫說明。"}</p>
+              <p>{selectedBank.description || "這個題庫尚未填寫說明。"}</p>
               <p>題目數：{selectedBank.questionCount ?? 0}</p>
             </div>
           ) : null}
