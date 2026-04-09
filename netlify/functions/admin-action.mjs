@@ -1,6 +1,7 @@
 import {
   createQuestionBank,
   createGame,
+  deletePlayer,
   deleteGame,
   deleteQuestion,
   deleteQuestionBank,
@@ -33,6 +34,7 @@ import { json, requireAdmin } from "./shared/supabaseAdmin.mjs";
 const actions = {
   createQuestionBank,
   createGame,
+  deletePlayer,
   deleteGame,
   deleteQuestion,
   deleteQuestionBank,

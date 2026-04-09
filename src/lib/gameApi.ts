@@ -463,6 +463,10 @@ export async function togglePlayerValidityRecord(playerId: string, valid: boolea
   await runAdminAction("togglePlayerValidity", { playerId, valid });
 }
 
+export async function deletePlayerRecord(playerId: string) {
+  await runAdminAction("deletePlayer", { playerId });
+}
+
 export async function submitAnswerRecord(params: {
   gameId: string;
   playerId: string;

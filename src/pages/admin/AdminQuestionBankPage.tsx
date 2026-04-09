@@ -44,10 +44,11 @@ export function AdminQuestionBankPage() {
 
   async function loadBanks(nextBankId?: string) {
     const loadedBanks = await fetchQuestionBanks();
-    setBanks(loadedBanks);
     const targetId = nextBankId || bankParam || selectedBankId || loadedBanks[0]?.id || "";
-    setSelectedBankId(targetId);
     const activeBank = loadedBanks.find((bank) => bank.id === targetId) ?? loadedBanks[0] ?? null;
+
+    setBanks(loadedBanks);
+    setSelectedBankId(activeBank?.id ?? "");
     setBankTitle(activeBank?.title ?? "");
     setBankDescription(activeBank?.description ?? "");
   }
@@ -68,14 +69,15 @@ export function AdminQuestionBankPage() {
 
   useEffect(() => {
     if (!selectedBankId) {
+      setQuestions([]);
       return;
     }
 
-    void loadQuestions(selectedBankId);
     const activeBank = banks.find((bank) => bank.id === selectedBankId);
     setBankTitle(activeBank?.title ?? "");
     setBankDescription(activeBank?.description ?? "");
     setQuestionForm(emptyQuestionForm);
+    void loadQuestions(selectedBankId);
   }, [selectedBankId, banks]);
 
   function startCreateBank() {
@@ -97,10 +99,10 @@ export function AdminQuestionBankPage() {
     setQuestionForm({
       id: question.id,
       content: question.prompt,
-      optionA: question.options[0],
-      optionB: question.options[1],
-      optionC: question.options[2],
-      optionD: question.options[3],
+      optionA: question.options[0] ?? "",
+      optionB: question.options[1] ?? "",
+      optionC: question.options[2] ?? "",
+      optionD: question.options[3] ?? "",
       correctOption: question.correctOption,
       explanation: question.explanation
     });
@@ -115,25 +117,27 @@ export function AdminQuestionBankPage() {
 
     try {
       setError("");
+      setMessage("");
+
       if (!selectedBankId) {
         const bank = await createQuestionBankRecord({
           title: bankTitle.trim(),
           description: bankDescription.trim()
         });
-        setMessage(`已新增題庫「${bank.title}」。`);
         await loadBanks(bank.id);
         navigate(`/admin/questions?bankId=${bank.id}`, { replace: true });
+        setMessage(`已建立題庫「${bank.title}」。`);
       } else {
         await updateQuestionBankRecord({
           id: selectedBankId,
           title: bankTitle.trim(),
           description: bankDescription.trim()
         });
-        setMessage(`已更新題庫「${bankTitle.trim()}」。`);
         await loadBanks(selectedBankId);
+        setMessage(`已更新題庫「${bankTitle.trim()}」。`);
       }
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "儲存題庫失敗。");
+      setError(submissionError instanceof Error ? submissionError.message : "儲存題庫失敗，請稍後再試。");
       setMessage("");
     }
   }
@@ -151,12 +155,13 @@ export function AdminQuestionBankPage() {
     try {
       setError("");
       setMessage("");
+      const removedTitle = selectedBank.title;
       await deleteQuestionBankRecord(selectedBankId);
       await loadBanks();
       navigate("/admin/questions", { replace: true });
-      setMessage(`已刪除題庫「${selectedBank.title}」。`);
+      setMessage(`已刪除題庫「${removedTitle}」。`);
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "刪除題庫失敗。");
+      setError(submissionError instanceof Error ? submissionError.message : "刪除題庫失敗，請稍後再試。");
     }
   }
 
@@ -174,12 +179,12 @@ export function AdminQuestionBankPage() {
         ...questionForm,
         bankId: selectedBankId
       });
-      setMessage(questionForm.id ? "題目已更新。" : "題目已新增。");
       editQuestion();
       await loadBanks(selectedBankId);
       await loadQuestions(selectedBankId);
+      setMessage(questionForm.id ? "題目已更新。" : "題目已新增。");
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "儲存題目失敗。");
+      setError(submissionError instanceof Error ? submissionError.message : "儲存題目失敗，請稍後再試。");
     }
   }
 
@@ -196,11 +201,11 @@ export function AdminQuestionBankPage() {
       if (questionForm.id === id) {
         editQuestion();
       }
-      setMessage("題目已刪除。");
       await loadBanks(selectedBankId);
       await loadQuestions(selectedBankId);
+      setMessage("題目已刪除。");
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "刪除題目失敗。");
+      setError(submissionError instanceof Error ? submissionError.message : "刪除題目失敗，請稍後再試。");
     }
   }
 
@@ -308,7 +313,7 @@ export function AdminQuestionBankPage() {
                 ))}
                 {selectedBank && questions.length === 0 ? (
                   <tr>
-                    <td colSpan={3}>這個題庫目前還沒有題目。</td>
+                    <td colSpan={3}>此題庫目前還沒有題目。</td>
                   </tr>
                 ) : null}
               </tbody>
@@ -318,7 +323,7 @@ export function AdminQuestionBankPage() {
       </div>
 
       <SectionCard
-        subtitle={selectedBank ? `目前新增到 ${selectedBank.title}` : "請先選擇題庫。"}
+        subtitle={selectedBank ? `目前編輯題庫：${selectedBank.title}` : "請先選擇題庫。"}
         title={questionForm.id ? "編輯題目" : "新增題目"}
       >
         <div className="form-grid">
@@ -390,7 +395,7 @@ export function AdminQuestionBankPage() {
               {questionForm.id ? "儲存題目" : "新增題目"}
             </button>
             <button className="button button--ghost" onClick={() => editQuestion()} type="button">
-              清空題目
+              清空表單
             </button>
           </div>
         </div>

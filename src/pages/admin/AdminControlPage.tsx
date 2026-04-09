@@ -29,6 +29,24 @@ function formatStatus(status: LiveGame["status"]) {
   return map[status] ?? status;
 }
 
+function downloadCsv(filename: string, rows: string[][]) {
+  const csv = rows
+    .map((row) =>
+      row
+        .map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`)
+        .join(",")
+    )
+    .join("\n");
+
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export function AdminControlPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -160,6 +178,36 @@ export function AdminControlPage() {
     }
 
     await runAction(() => resetGameRecord(game.id));
+  }
+
+  function exportRoundPlayers(kind: "alive" | "eliminated") {
+    if (!game) {
+      return;
+    }
+
+    const targetPlayers = kind === "alive" ? alivePlayersInRound : eliminatedPlayersInRound;
+    if (targetPlayers.length === 0) {
+      setError(kind === "alive" ? "目前沒有可下載的存活名單。" : "目前沒有可下載的淘汰名單。");
+      return;
+    }
+
+    const rows = [
+      ["場次", "回合", "名單類型", "暱稱", "部門", "員編", "狀態"],
+      ...targetPlayers.map((player) => [
+        game.title,
+        String(game.currentRound),
+        kind === "alive" ? "存活" : "淘汰",
+        player.nickname,
+        player.department,
+        player.employeeId,
+        player.status
+      ])
+    ];
+
+    downloadCsv(
+      `${game.title}-第${game.currentRound}題-${kind === "alive" ? "存活名單" : "淘汰名單"}.csv`,
+      rows
+    );
   }
 
   if (!game) {
@@ -319,7 +367,15 @@ export function AdminControlPage() {
 
       {game.mode === "survival" ? (
         <div className="grid-2 admin-two-column">
-          <SectionCard subtitle="本輪公布結果後仍存活的玩家。" title="本輪存活名單">
+          <SectionCard
+            aside={
+              <button className="button button--ghost" onClick={() => exportRoundPlayers("alive")} type="button">
+                下載明細
+              </button>
+            }
+            subtitle="本輪公布結果後仍存活的玩家。"
+            title="本輪存活名單"
+          >
             {alivePlayersInRound.length > 0 ? (
               <RankList players={alivePlayersInRound} showMeta={false} showScore={false} />
             ) : (
@@ -327,7 +383,15 @@ export function AdminControlPage() {
             )}
           </SectionCard>
 
-          <SectionCard subtitle="本輪答錯或未作答而被淘汰的玩家。" title="本輪淘汰名單">
+          <SectionCard
+            aside={
+              <button className="button button--ghost" onClick={() => exportRoundPlayers("eliminated")} type="button">
+                下載明細
+              </button>
+            }
+            subtitle="本輪答錯或未作答而被淘汰的玩家。"
+            title="本輪淘汰名單"
+          >
             {eliminatedPlayersInRound.length > 0 ? (
               <RankList players={eliminatedPlayersInRound} showMeta={false} showScore={false} />
             ) : (

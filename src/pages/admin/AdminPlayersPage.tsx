@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { SectionCard } from "../../components/SectionCard";
-import { fetchGames, fetchPlayers, togglePlayerValidityRecord, updatePlayerRecord } from "../../lib/gameApi";
+import { deletePlayerRecord, fetchGames, fetchPlayers, updatePlayerRecord } from "../../lib/gameApi";
 import type { LiveGame, Player } from "../../types/domain";
 
 export function AdminPlayersPage() {
@@ -18,8 +18,16 @@ export function AdminPlayersPage() {
   const [department, setDepartment] = useState("");
   const [employeeId, setEmployeeId] = useState("");
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
-  async function load(nextGameId?: string) {
+  function syncSelection(player?: Player) {
+    setSelectedPlayerId(player?.id ?? "");
+    setNickname(player?.nickname ?? "");
+    setDepartment(player?.department ?? "");
+    setEmployeeId(player?.employeeId ?? "");
+  }
+
+  async function load(nextGameId?: string, nextSelectedPlayerId?: string) {
     const loadedGames = await fetchGames();
     const currentGame =
       loadedGames.find((item) => item.id === nextGameId) ??
@@ -27,15 +35,14 @@ export function AdminPlayersPage() {
       loadedGames[0] ??
       null;
     const currentPlayers = currentGame ? await fetchPlayers(currentGame.id) : [];
+    const selectedPlayer =
+      currentPlayers.find((player) => player.id === nextSelectedPlayerId) ??
+      currentPlayers[0];
 
     setGames(loadedGames);
     setGame(currentGame);
     setPlayers(currentPlayers);
-    if (currentPlayers[0]) {
-      syncSelection(currentPlayers[0]);
-    } else {
-      syncSelection(undefined);
-    }
+    syncSelection(selectedPlayer);
   }
 
   useEffect(() => {
@@ -55,14 +62,6 @@ export function AdminPlayersPage() {
     );
   }, [keyword, players]);
 
-  function syncSelection(player?: Player) {
-    setSelectedPlayerId(player?.id ?? "");
-    setNickname(player?.nickname ?? "");
-    setDepartment(player?.department ?? "");
-    setEmployeeId(player?.employeeId ?? "");
-    setError("");
-  }
-
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!game || !selectedPlayerId) {
@@ -71,18 +70,41 @@ export function AdminPlayersPage() {
 
     try {
       setError("");
+      setMessage("");
       await updatePlayerRecord(game.id, selectedPlayerId, { nickname, department, employeeId });
-      await load(game.id);
+      await load(game.id, selectedPlayerId);
+      setMessage("玩家資料已更新。");
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "更新玩家資料失敗。");
+      setError(submissionError instanceof Error ? submissionError.message : "更新玩家資料失敗，請稍後再試。");
+    }
+  }
+
+  async function handleDeletePlayer(player: Player) {
+    if (!game) {
+      return;
+    }
+
+    const confirmed = window.confirm(`確定要刪除玩家「${player.nickname} / ${player.employeeId}」嗎？`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setError("");
+      setMessage("");
+      await deletePlayerRecord(player.id);
+      await load(game.id, selectedPlayerId === player.id ? undefined : selectedPlayerId);
+      setMessage("玩家資料已刪除。");
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "刪除玩家失敗，請稍後再試。");
     }
   }
 
   if (!game) {
     return (
       <div className="admin-layout">
-        <SectionCard subtitle="請先建立場次後再管理玩家。" title="尚未建立場次">
-          <p>目前沒有可管理的玩家資料。</p>
+        <SectionCard subtitle="目前沒有任何場次，無法管理玩家。" title="尚未建立場次">
+          <p>請先建立場次後，再進入玩家管理。</p>
         </SectionCard>
       </div>
     );
@@ -93,8 +115,11 @@ export function AdminPlayersPage() {
       <section className="player-stage">
         <p className="eyebrow">主持人後台 / 玩家管理</p>
         <h1>玩家資料管理</h1>
-        <p className="hero-text">可依暱稱、部門或員編搜尋，並在現場直接修正玩家輸入錯誤。</p>
+        <p className="hero-text">可依暱稱、部門或員編搜尋，並在現場直接修正玩家資料或刪除錯誤資料。</p>
       </section>
+
+      {error ? <p className="inline-error">{error}</p> : null}
+      {message ? <p className="inline-success">{message}</p> : null}
 
       <div className="grid-2 admin-two-column">
         <SectionCard subtitle={`目前場次：${game.title}`} title="玩家列表">
@@ -140,31 +165,30 @@ export function AdminPlayersPage() {
                     <td>{player.nickname}</td>
                     <td>{player.department}</td>
                     <td>{player.employeeId}</td>
-                    <td>{player.valid ? "有效" : "無效"}</td>
+                    <td>{player.status}</td>
                     <td>
                       <div className="table-actions">
                         <button onClick={() => syncSelection(player)} type="button">
                           編輯
                         </button>
-                        <button
-                          onClick={async () => {
-                            await togglePlayerValidityRecord(player.id, !player.valid);
-                            await load(game.id);
-                          }}
-                          type="button"
-                        >
-                          {player.valid ? "標記無效" : "恢復有效"}
+                        <button onClick={() => void handleDeletePlayer(player)} type="button">
+                          刪除
                         </button>
                       </div>
                     </td>
                   </tr>
                 ))}
+                {filteredPlayers.length === 0 ? (
+                  <tr>
+                    <td colSpan={5}>目前沒有符合條件的玩家資料。</td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
         </SectionCard>
 
-        <SectionCard subtitle="選取左側玩家後可直接修正資料。" title="編輯玩家">
+        <SectionCard subtitle="選取左側玩家後可直接修改資料。" title="編輯玩家">
           <form className="form-grid" onSubmit={handleSave}>
             <label>
               暱稱
@@ -178,8 +202,7 @@ export function AdminPlayersPage() {
               員編
               <input onChange={(event) => setEmployeeId(event.target.value)} value={employeeId} />
             </label>
-            {error ? <p className="inline-error">{error}</p> : null}
-            <button className="button button--primary" type="submit">
+            <button className="button button--primary" disabled={!selectedPlayerId} type="submit">
               儲存資料
             </button>
           </form>

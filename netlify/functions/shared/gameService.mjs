@@ -705,6 +705,62 @@ export async function togglePlayerValidity(payload) {
   }
 }
 
+async function rebuildRoundResultCounts(gameId) {
+  const supabase = getSupabaseAdmin();
+  const { data: results, error: resultError } = await supabase
+    .from("round_results")
+    .select("id, round_no")
+    .eq("game_id", gameId);
+
+  if (resultError) {
+    throw resultError;
+  }
+
+  for (const result of results ?? []) {
+    const { data: statuses, error: statusError } = await supabase
+      .from("player_round_statuses")
+      .select("survived, eliminated_in_round")
+      .eq("game_id", gameId)
+      .eq("round_no", result.round_no);
+
+    if (statusError) {
+      throw statusError;
+    }
+
+    const aliveCount = (statuses ?? []).filter((item) => item.survived).length;
+    const eliminatedCount = (statuses ?? []).filter((item) => item.eliminated_in_round).length;
+
+    const { error: updateError } = await supabase
+      .from("round_results")
+      .update({
+        alive_count: aliveCount,
+        eliminated_count: eliminatedCount
+      })
+      .eq("id", result.id);
+
+    if (updateError) {
+      throw updateError;
+    }
+  }
+}
+
+export async function deletePlayer(payload) {
+  const supabase = getSupabaseAdmin();
+  const player = await fetchPlayerById(payload.playerId);
+
+  if (!player) {
+    throw new Error("找不到要刪除的玩家。");
+  }
+
+  const { error } = await supabase.from("players").delete().eq("id", payload.playerId);
+  if (error) {
+    throw error;
+  }
+
+  await rebuildRoundResultCounts(player.game_id);
+  return { ok: true };
+}
+
 export async function openRegistration(payload) {
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
