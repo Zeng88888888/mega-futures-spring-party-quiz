@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SectionCard } from "../../components/SectionCard";
 import { fetchPlayerSnapshot, submitAnswerRecord, subscribeToGameRealtime } from "../../lib/gameApi";
-import { getPlayerSession } from "../../lib/playerSession";
+import {
+  clearPendingAnswerSession,
+  getPendingAnswerSession,
+  getPlayerSession,
+  setPendingAnswerSession
+} from "../../lib/playerSession";
 import type { LiveGame, Player, PlayerAnswer, Question } from "../../types/domain";
 
 function formatMode(mode: LiveGame["mode"]) {
@@ -46,6 +51,7 @@ export function PlayerQuestionPage() {
   const [remainingMs, setRemainingMs] = useState<number | null>(null);
   const [prepRemainingMs, setPrepRemainingMs] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRecoveringPendingAnswer, setIsRecoveringPendingAnswer] = useState(false);
 
   useEffect(() => {
     if (!session) {
@@ -65,9 +71,35 @@ export function PlayerQuestionPage() {
       setGame(snapshot.game);
       setPlayer(snapshot.player);
       setQuestion(snapshot.question);
+      const pendingAnswer = getPendingAnswerSession();
       setAnswer((current) => {
         if (!snapshot.game) {
           return snapshot.answer;
+        }
+
+        if (snapshot.answer) {
+          clearPendingAnswerSession();
+          return snapshot.answer;
+        }
+
+        if (
+          pendingAnswer &&
+          pendingAnswer.gameId === currentSession.gameId &&
+          pendingAnswer.playerId === currentSession.playerId &&
+          pendingAnswer.roundNo === snapshot.game.currentRound &&
+          pendingAnswer.questionId === snapshot.question?.id
+        ) {
+          return {
+            playerId: currentSession.playerId,
+            questionId: pendingAnswer.questionId,
+            roundNo: pendingAnswer.roundNo,
+            selectedOption: pendingAnswer.selectedOption,
+            answerStatus: "wrong",
+            isCorrect: false,
+            responseMs: pendingAnswer.responseMs,
+            score: 0,
+            answeredAt: pendingAnswer.answeredAt
+          };
         }
 
         if (!current) {
@@ -107,6 +139,42 @@ export function PlayerQuestionPage() {
       unsubscribe();
     };
   }, [navigate, session]);
+
+  useEffect(() => {
+    if (!session || !game || !question || !answer?.selectedOption || isRecoveringPendingAnswer || isSubmitting) {
+      return;
+    }
+
+    const pendingAnswer = getPendingAnswerSession();
+    if (
+      !pendingAnswer ||
+      pendingAnswer.gameId !== session.gameId ||
+      pendingAnswer.playerId !== session.playerId ||
+      pendingAnswer.roundNo !== game.currentRound ||
+      pendingAnswer.questionId !== question.id ||
+      pendingAnswer.selectedOption !== answer.selectedOption ||
+      game.status !== "live_question"
+    ) {
+      return;
+    }
+
+    setIsRecoveringPendingAnswer(true);
+    void submitAnswerRecord({
+      gameId: game.id,
+      playerId: session.playerId,
+      selectedOption: pendingAnswer.selectedOption,
+      answeredAt: pendingAnswer.answeredAt
+    })
+      .then(() => {
+        clearPendingAnswerSession();
+      })
+      .catch(() => {
+        // Keep the local optimistic answer; a later refresh can retry.
+      })
+      .finally(() => {
+        setIsRecoveringPendingAnswer(false);
+      });
+  }, [answer?.selectedOption, game, isRecoveringPendingAnswer, isSubmitting, question, session]);
 
   useEffect(() => {
     if (!session || !game || !question || game.mode !== "competition" || !game.startedAt || !game.competitionSeconds) {
@@ -176,6 +244,15 @@ export function PlayerQuestionPage() {
 
     setError("");
     setIsSubmitting(true);
+    setPendingAnswerSession({
+      gameId: game.id,
+      playerId: session.playerId,
+      roundNo: game.currentRound,
+      questionId: question.id,
+      selectedOption: option,
+      answeredAt,
+      responseMs: actualResponseMs
+    });
     setAnswer({
       playerId: session.playerId,
       questionId: question.id,
@@ -195,10 +272,14 @@ export function PlayerQuestionPage() {
         selectedOption: option,
         answeredAt
       });
+      clearPendingAnswerSession();
     } catch (submissionError) {
-      setAnswer(null);
       setIsSubmitting(false);
-      setError(submissionError instanceof Error ? submissionError.message : "送出答案失敗，請再試一次。");
+      setError(
+        submissionError instanceof Error
+          ? `${submissionError.message}，系統會保留這次作答並嘗試同步。`
+          : "送出答案失敗，系統會保留這次作答並嘗試同步。"
+      );
     }
   }
 
