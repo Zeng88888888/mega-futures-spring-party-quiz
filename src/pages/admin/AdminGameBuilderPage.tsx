@@ -11,6 +11,16 @@ function generateJoinCode() {
   return `MEGA${stamp}${random}`;
 }
 
+function getLeaderboardFieldLabel(mode: GameMode) {
+  return mode === "competition" ? "排行榜顯示名次" : "淘汰賽結束門檻（剩餘人數）";
+}
+
+function getLeaderboardFieldHint(mode: GameMode) {
+  return mode === "competition"
+    ? "例如填 10，代表排行榜顯示前 10 名。"
+    : "例如填 10，代表剩餘人數小於或等於 10 人時就結束比賽。";
+}
+
 export function AdminGameBuilderPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -120,13 +130,12 @@ export function AdminGameBuilderPage() {
       <section className="player-stage">
         <p className="eyebrow">主持人後台 / 場次設定</p>
         <h1>{isEditing ? "更新場次設定" : "建立新場次"}</h1>
-        <p className="hero-text">每個場次只能綁定一個題庫，玩家掃 QR code 後會直接進入該場次的建立資料頁。</p>
+        <p className="hero-text">
+          每個場次只能綁定一個題庫。競賽模式可設定排行榜顯示名次，淘汰賽則可設定剩餘幾人內自動結束。
+        </p>
       </section>
 
-      <SectionCard
-        subtitle="請選擇模式、題庫與題數。"
-        title={isEditing ? "更新場次設定" : "建立場次"}
-      >
+      <SectionCard subtitle="請選擇模式、題庫與題數。" title={isEditing ? "更新場次設定" : "建立場次"}>
         {isLoading ? <p className="inline-success">讀取場次設定中...</p> : null}
 
         <form className="form-grid form-grid--wide" onSubmit={handleSubmit}>
@@ -170,13 +179,14 @@ export function AdminGameBuilderPage() {
           </label>
 
           <label>
-            排行榜顯示名次
+            {getLeaderboardFieldLabel(mode)}
             <input
               min={1}
               onChange={(event) => setLeaderboardSize(Number(event.target.value))}
               type="number"
               value={leaderboardSize}
             />
+            <span className="status-note">{getLeaderboardFieldHint(mode)}</span>
           </label>
 
           {selectedBank ? (
