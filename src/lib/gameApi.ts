@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+﻿import { supabase } from "./supabase";
 import {
   joinGameServer,
   readJoinStats,
@@ -104,7 +104,7 @@ type PlayerRoundStatusRow = {
 
 function assertConfigured() {
   if (!isSupabaseConfigured) {
-    throw new Error("Supabase 尚未完成設定。");
+    throw new Error("Supabase 尚未正確設定。");
   }
 }
 
@@ -441,11 +441,15 @@ export async function joinGameRecord(params: {
   };
 }
 
-export async function updatePlayerRecord(gameId: string, playerId: string, payload: {
-  nickname: string;
-  department: string;
-  employeeId: string;
-}) {
+export async function updatePlayerRecord(
+  gameId: string,
+  playerId: string,
+  payload: {
+    nickname: string;
+    department: string;
+    employeeId: string;
+  }
+) {
   await runAdminAction("updatePlayer", { gameId, playerId, ...payload });
 }
 
@@ -564,3 +568,4 @@ export async function fetchPlayerSnapshot(gameId: string, playerId: string) {
       : null
   };
 }
+

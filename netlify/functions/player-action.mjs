@@ -16,7 +16,7 @@ export async function handler(event) {
     const action = actions[body.action];
 
     if (!action) {
-      return json(400, { message: "未知的玩家操作。" });
+      return json(400, { message: "不支援的玩家操作。" });
     }
 
     const result = await action(body.payload || {});

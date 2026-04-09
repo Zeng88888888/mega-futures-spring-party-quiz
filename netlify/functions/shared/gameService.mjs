@@ -1,4 +1,4 @@
-import { getSupabaseAdmin } from "./supabaseAdmin.mjs";
+﻿import { getSupabaseAdmin } from "./supabaseAdmin.mjs";
 
 const DEFAULT_COMPETITION_SECONDS = 10;
 const DEFAULT_BANK_TITLE = "題庫一";
@@ -57,7 +57,7 @@ async function ensureDefaultQuestionBank() {
     .from("question_banks")
     .insert({
       title: DEFAULT_BANK_TITLE,
-      description: "預設題庫"
+      description: "系統預設題庫"
     })
     .select("id, title, description, created_at")
     .single();
@@ -133,7 +133,7 @@ async function rebuildGameQuestions(gameId, bankId, questionCount) {
   const questions = await fetchQuestionsByBank(bankId, questionCount);
 
   if (questions.length < questionCount) {
-    throw new Error(`所選題庫只有 ${questions.length} 題，不足 ${questionCount} 題。`);
+    throw new Error(`題庫只有 ${questions.length} 題，無法建立 ${questionCount} 題的場次。`);
   }
 
   const { error: deleteError } = await supabase.from("game_questions").delete().eq("game_id", gameId);
@@ -230,7 +230,7 @@ export async function deleteQuestionBank(payload) {
   }
 
   if ((questionCount ?? 0) > 0 || (gameCount ?? 0) > 0) {
-    throw new Error("題庫仍有題目或場次使用中，無法刪除。");
+    throw new Error("題庫內仍有題目或場次正在使用，無法刪除。");
   }
 
   const { error } = await supabase.from("question_banks").delete().eq("id", payload.id);
@@ -470,11 +470,11 @@ export async function joinGame(payload) {
   const game = await fetchGameByJoinCode(payload.joinCode);
 
   if (!game) {
-    throw new Error("找不到這個場次。");
+    throw new Error("找不到對應場次。");
   }
 
   if (game.status !== "draft" && game.status !== "registering") {
-    throw new Error("這一場已經開始，現在不能再加入。");
+    throw new Error("場次已開始，現在不能再加入。");
   }
 
   const employeeId = String(payload.employeeId).trim();
@@ -490,7 +490,7 @@ export async function joinGame(payload) {
   }
 
   if (duplicate) {
-    throw new Error("這位員編已經加入本場次。");
+    throw new Error("此員編已加入本場次。");
   }
 
   const { data, error } = await supabase
@@ -533,13 +533,13 @@ export async function createGame(payload) {
   }
 
   if (existingCode) {
-    throw new Error("場次代碼重複，請重新產生。");
+    throw new Error("場次識別碼已存在，請重新產生。");
   }
 
   const questionCount = Number(payload.questionCount);
   const availableQuestions = await fetchQuestionsByBank(bank.id, questionCount);
   if (availableQuestions.length < questionCount) {
-    throw new Error(`「${bank.title}」只有 ${availableQuestions.length} 題，無法建立 ${questionCount} 題的場次。`);
+    throw new Error(`題庫 ${bank.title} 只有 ${availableQuestions.length} 題，無法建立 ${questionCount} 題的場次。`);
   }
 
   const { data, error } = await supabase
@@ -575,7 +575,7 @@ export async function updateGame(payload) {
   }
 
   if (!["draft", "registering"].includes(game.status)) {
-    throw new Error("只能編輯尚未開始的場次。");
+    throw new Error("場次進行中或已結束，不能再編輯。");
   }
 
   const bank = await requireQuestionBank(payload.bankId);
@@ -594,12 +594,12 @@ export async function updateGame(payload) {
   }
 
   if (duplicate) {
-    throw new Error("場次代碼重複，請重新產生。");
+    throw new Error("場次識別碼已存在，請重新產生。");
   }
 
   const availableQuestions = await fetchQuestionsByBank(bank.id, questionCount);
   if (availableQuestions.length < questionCount) {
-    throw new Error(`「${bank.title}」只有 ${availableQuestions.length} 題，無法套用 ${questionCount} 題。`);
+    throw new Error(`題庫 ${bank.title} 只有 ${availableQuestions.length} 題，無法更新成 ${questionCount} 題。`);
   }
 
   const { error } = await supabase
@@ -631,7 +631,7 @@ export async function deleteGame(payload) {
   }
 
   if (["live_question", "round_result"].includes(game.status)) {
-    throw new Error("進行中的場次不能直接刪除。");
+    throw new Error("場次進行中，無法刪除。");
   }
 
   const { error } = await supabase.from("games").delete().eq("id", payload.gameId);
@@ -666,7 +666,7 @@ export async function updatePlayer(payload) {
   }
 
   if (duplicate) {
-    throw new Error("這個員編已被同場其他玩家使用。");
+    throw new Error("員編已存在於同場次，請重新確認。");
   }
 
   const { error } = await supabase
@@ -793,11 +793,11 @@ export async function submitAnswer(payload) {
   const player = await fetchPlayerById(payload.playerId);
 
   if (!game || game.status !== "live_question" || !player || !player.is_valid) {
-    throw new Error("目前不能提交答案。");
+    throw new Error("目前不可作答。");
   }
 
   if (game.mode === "survival" && player.status === "eliminated") {
-    throw new Error("你已經被淘汰，不能再作答。");
+    throw new Error("你已被淘汰，不能再作答。");
   }
 
   const question = await fetchQuestionForRound(payload.gameId, game.current_round);
@@ -818,7 +818,7 @@ export async function submitAnswer(payload) {
   }
 
   if (existing) {
-    throw new Error("你已經提交過這一題。");
+    throw new Error("本題已送出過答案。");
   }
 
   if (game.mode === "competition" && game.started_at && game.competition_seconds) {
@@ -851,12 +851,12 @@ export async function resolveRound(payload) {
   const supabase = getSupabaseAdmin();
   const game = await fetchGameById(payload.gameId);
   if (!game || game.current_round <= 0) {
-    throw new Error("目前沒有可公布的題目。");
+    throw new Error("目前沒有可結算的題目。");
   }
 
   const question = await fetchQuestionForRound(payload.gameId, game.current_round);
   if (!question) {
-    throw new Error("找不到本回合題目。");
+    throw new Error("找不到本輪題目。");
   }
 
   const players = await fetchPlayers(payload.gameId);
@@ -1224,3 +1224,4 @@ export async function getControlSnapshot(payload) {
     roundHistory: roundResults.data ?? []
   };
 }
+

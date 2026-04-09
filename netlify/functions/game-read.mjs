@@ -17,12 +17,12 @@ export async function handler(event) {
     const action = actions[body.action];
 
     if (!action) {
-      return json(400, { message: "未知的讀取操作。" });
+      return json(400, { message: "不支援的讀取操作。" });
     }
 
     const result = await action(body.payload || {});
     return json(200, result);
   } catch (error) {
-    return json(error.statusCode || 500, { message: error.message || "讀取資料失敗。" });
+    return json(error.statusCode || 500, { message: error.message || "資料讀取失敗。" });
   }
 }
