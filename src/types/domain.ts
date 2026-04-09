@@ -89,3 +89,12 @@ export interface PlayerRoundStatus {
   survived: boolean;
   eliminatedInRound: boolean;
 }
+
+export interface ControlSnapshot {
+  game: LiveGame | null;
+  players: Player[];
+  question: Question | null;
+  submittedCount: number;
+  roundHistory: RoundResult[];
+  roundStatuses: PlayerRoundStatus[];
+}

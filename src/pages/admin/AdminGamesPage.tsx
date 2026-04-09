@@ -22,8 +22,8 @@ function formatStatus(status: LiveGame["status"]) {
   const map: Record<LiveGame["status"], string> = {
     draft: "草稿",
     registering: "報名中",
-    live_question: "進行中",
-    round_result: "公佈結果",
+    live_question: "作答中",
+    round_result: "公布結果",
     ended: "已結束"
   };
   return map[status] ?? status;
@@ -35,25 +35,31 @@ export function AdminGamesPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [banks, setBanks] = useState<QuestionBank[]>([]);
   const [error, setError] = useState("");
-  const [selectedGame, setSelectedGame] = useState<LiveGame | null>(null);
+  const [selectedGameId, setSelectedGameId] = useState("");
   const [qrCodeUrl, setQrCodeUrl] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+
+  const selectedGame = useMemo(
+    () => games.find((game) => game.id === selectedGameId) ?? games[0] ?? null,
+    [games, selectedGameId]
+  );
 
   async function loadDashboard(preferredGameId?: string) {
     const [loadedGames, loadedBanks] = await Promise.all([fetchGames(), fetchQuestionBanks()]);
     setGames(loadedGames);
     setBanks(loadedBanks);
 
-    const activeGame =
-      loadedGames.find((game) => game.id === preferredGameId) ??
-      loadedGames.find((game) => game.id === selectedGame?.id) ??
-      loadedGames[0] ??
-      null;
+    const activeGameId =
+      loadedGames.find((game) => game.id === preferredGameId)?.id ??
+      loadedGames.find((game) => game.id === selectedGameId)?.id ??
+      loadedGames[0]?.id ??
+      "";
 
-    setSelectedGame(activeGame);
-    if (activeGame) {
-      setPlayers(await fetchPlayers(activeGame.id));
+    setSelectedGameId(activeGameId);
+
+    if (activeGameId) {
+      setPlayers(await fetchPlayers(activeGameId));
     } else {
       setPlayers([]);
     }
@@ -69,7 +75,7 @@ export function AdminGamesPage() {
         await loadDashboard();
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "讀取場次列表失敗。");
+          setError(loadError instanceof Error ? loadError.message : "讀取場次列表失敗，請稍後再試。");
         }
       } finally {
         if (!cancelled) {
@@ -100,7 +106,7 @@ export function AdminGamesPage() {
         }
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "讀取玩家資料失敗。");
+          setError(loadError instanceof Error ? loadError.message : "讀取玩家列表失敗，請稍後再試。");
         }
       }
     }
@@ -168,7 +174,7 @@ export function AdminGamesPage() {
       await deleteGameRecord(game.id);
       await loadDashboard(selectedGame?.id === game.id ? undefined : selectedGame?.id);
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "刪除場次失敗。");
+      setError(deleteError instanceof Error ? deleteError.message : "刪除場次失敗，請稍後再試。");
     }
   }
 
@@ -197,7 +203,7 @@ export function AdminGamesPage() {
       </section>
 
       {error ? <p className="inline-error">{error}</p> : null}
-      {isLoading ? <p className="inline-success">載入場次資料中...</p> : null}
+      {isLoading ? <p className="inline-success">正在載入場次資料...</p> : null}
 
       <div className="grid-4">
         <MetricCard label="場次數量" tone="accent" value={games.length} />
@@ -218,12 +224,20 @@ export function AdminGamesPage() {
           </div>
         </SectionCard>
 
-        <SectionCard
-          subtitle="選一個場次後，玩家掃碼就能直接填資料加入，不必再輸入加入碼。"
-          title="玩家入場 QR code"
-        >
+        <SectionCard subtitle="先選一個場次，再產生對應的玩家 QR code。" title="玩家入場 QR code">
           {selectedGame ? (
             <div className="stack-md">
+              <label className="form-grid">
+                <span className="status-note">選擇要發給玩家的場次</span>
+                <select onChange={(event) => setSelectedGameId(event.target.value)} value={selectedGame.id}>
+                  {games.map((game) => (
+                    <option key={game.id} value={game.id}>
+                      {game.title} / {formatMode(game.mode)} / {formatStatus(game.status)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
               <div className="pill-row">
                 <span className="pill">目前場次：{selectedGame.title}</span>
                 <span className="pill">模式：{formatMode(selectedGame.mode)}</span>
@@ -259,7 +273,7 @@ export function AdminGamesPage() {
         </SectionCard>
       </div>
 
-      <SectionCard subtitle="點選某一場即可切換右側 QR code 與管理入口。" title="場次列表">
+      <SectionCard subtitle="點選其中一場就會同步切換右側 QR code。" title="場次列表">
         <div className="table-card">
           <table>
             <thead>
@@ -270,19 +284,19 @@ export function AdminGamesPage() {
                 <th>題庫</th>
                 <th>題目數</th>
                 <th>玩家入口</th>
-                <th>管理</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
               {games.length === 0 ? (
                 <tr>
-                  <td colSpan={7}>目前還沒有場次。</td>
+                  <td colSpan={7}>目前還沒有建立任何場次。</td>
                 </tr>
               ) : null}
               {games.map((game) => (
                 <tr key={game.id}>
                   <td>
-                    <button className="link-button" onClick={() => setSelectedGame(game)} type="button">
+                    <button className="link-button" onClick={() => setSelectedGameId(game.id)} type="button">
                       {game.title}
                     </button>
                   </td>
@@ -292,7 +306,7 @@ export function AdminGamesPage() {
                   <td>{game.questionCount}</td>
                   <td>
                     <div className="table-actions">
-                      <button onClick={() => setSelectedGame(game)} type="button">
+                      <button onClick={() => setSelectedGameId(game.id)} type="button">
                         顯示 QR
                       </button>
                       <a href={getPlayerJoinUrl(game.joinCode)} rel="noreferrer" target="_blank">

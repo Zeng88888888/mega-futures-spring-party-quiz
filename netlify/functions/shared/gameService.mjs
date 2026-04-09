@@ -761,6 +761,10 @@ export async function startNextRound(payload) {
     throw new Error("找不到場次。");
   }
 
+  if (game.status !== "round_result") {
+    throw new Error("請先公布本題結果，再進入下一題。");
+  }
+
   if (game.current_round >= game.question_count) {
     await endGame(payload);
     return;
@@ -1259,14 +1263,21 @@ export async function getControlSnapshot(payload) {
     throw new Error("找不到場次。");
   }
 
-  const [players, answers, roundResults] = await Promise.all([
+  const [players, answers, roundResults, roundStatuses] = await Promise.all([
     fetchPlayers(payload.gameId),
     game.current_round > 0 ? fetchAnswersForRound(payload.gameId, game.current_round) : Promise.resolve([]),
     getSupabaseAdmin()
       .from("round_results")
       .select("round_no, published_at, alive_count, eliminated_count")
       .eq("game_id", payload.gameId)
-      .order("round_no", { ascending: true })
+      .order("round_no", { ascending: true }),
+    game.current_round > 0
+      ? getSupabaseAdmin()
+          .from("player_round_statuses")
+          .select("player_id, round_no, answer_status, survived, eliminated_in_round")
+          .eq("game_id", payload.gameId)
+          .eq("round_no", game.current_round)
+      : Promise.resolve({ data: [], error: null })
   ]);
 
   const question = game.current_round > 0 ? await fetchQuestionForRound(payload.gameId, game.current_round) : null;
@@ -1276,7 +1287,8 @@ export async function getControlSnapshot(payload) {
     players,
     question,
     submittedCount: answers.length,
-    roundHistory: roundResults.data ?? []
+    roundHistory: roundResults.data ?? [],
+    roundStatuses: roundStatuses.data ?? []
   };
 }
 

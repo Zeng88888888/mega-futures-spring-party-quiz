@@ -366,6 +366,7 @@ export async function fetchAdminControlSnapshot(gameId: string) {
     question: (QuestionRow & { order_no?: number }) | null;
     submittedCount: number;
     roundHistory: RoundResultRow[];
+    roundStatuses: PlayerRoundStatusRow[];
   }>("getControlSnapshot", { gameId });
 
   return {
@@ -373,7 +374,8 @@ export async function fetchAdminControlSnapshot(gameId: string) {
     players: (result.players ?? []).map(mapPlayer),
     question: result.question ? mapQuestion(result.question, result.question.order_no) : null,
     submittedCount: result.submittedCount ?? 0,
-    roundHistory: (result.roundHistory ?? []).map(mapRoundResult)
+    roundHistory: (result.roundHistory ?? []).map(mapRoundResult),
+    roundStatuses: (result.roundStatuses ?? []).map(mapPlayerRoundStatus)
   };
 }
 

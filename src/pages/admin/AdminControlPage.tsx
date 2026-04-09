@@ -12,7 +12,7 @@ import {
   startGameRecord,
   startNextRoundRecord
 } from "../../lib/gameApi";
-import type { LiveGame, Player, Question, RoundResult } from "../../types/domain";
+import type { LiveGame, Player, PlayerRoundStatus, Question, RoundResult } from "../../types/domain";
 
 function formatMode(mode: LiveGame["mode"]) {
   return mode === "competition" ? "競賽模式" : "淘汰賽模式";
@@ -39,6 +39,7 @@ export function AdminControlPage() {
   const [leaderboard, setLeaderboard] = useState<Player[]>([]);
   const [question, setQuestion] = useState<Question | null>(null);
   const [roundHistory, setRoundHistory] = useState<RoundResult[]>([]);
+  const [roundStatuses, setRoundStatuses] = useState<PlayerRoundStatus[]>([]);
   const [submittedCount, setSubmittedCount] = useState(0);
   const [error, setError] = useState("");
 
@@ -64,6 +65,7 @@ export function AdminControlPage() {
             setLeaderboard([]);
             setQuestion(null);
             setRoundHistory([]);
+            setRoundStatuses([]);
             setSubmittedCount(0);
           }
           return;
@@ -99,6 +101,7 @@ export function AdminControlPage() {
         setLeaderboard(currentLeaderboard.slice(0, currentGame.leaderboardSize || 10));
         setQuestion(snapshot.question);
         setRoundHistory(snapshot.roundHistory);
+        setRoundStatuses(snapshot.roundStatuses);
         setSubmittedCount(snapshot.submittedCount);
       } catch (loadError) {
         if (!cancelled) {
@@ -126,6 +129,16 @@ export function AdminControlPage() {
     () => validPlayers.filter((player) => player.status !== "eliminated"),
     [validPlayers]
   );
+  const alivePlayersInRound = useMemo(() => {
+    const aliveIds = new Set(roundStatuses.filter((item) => item.survived).map((item) => item.playerId));
+    return players.filter((player) => aliveIds.has(player.id));
+  }, [players, roundStatuses]);
+  const eliminatedPlayersInRound = useMemo(() => {
+    const eliminatedIds = new Set(roundStatuses.filter((item) => item.eliminatedInRound).map((item) => item.playerId));
+    return players.filter((player) => eliminatedIds.has(player.id));
+  }, [players, roundStatuses]);
+  const canResolveRound = game?.status === "live_question";
+  const canGoNextRound = game?.status === "round_result";
 
   async function runAction(action: () => Promise<void>) {
     try {
@@ -181,10 +194,20 @@ export function AdminControlPage() {
               開始第一題
             </button>
           ) : null}
-          <button className="button button--ghost" onClick={() => void runAction(() => resolveCurrentRoundRecord(game.id))} type="button">
+          <button
+            className="button button--ghost"
+            disabled={!canResolveRound}
+            onClick={() => void runAction(() => resolveCurrentRoundRecord(game.id))}
+            type="button"
+          >
             公布結果
           </button>
-          <button className="button button--ghost" onClick={() => void runAction(() => startNextRoundRecord(game.id))} type="button">
+          <button
+            className="button button--ghost"
+            disabled={!canGoNextRound}
+            onClick={() => void runAction(() => startNextRoundRecord(game.id))}
+            type="button"
+          >
             下一題
           </button>
           <button className="button button--ghost" onClick={() => void handleResetGame()} type="button">
@@ -293,6 +316,26 @@ export function AdminControlPage() {
           </table>
         </div>
       </SectionCard>
+
+      {game.mode === "survival" ? (
+        <div className="grid-2 admin-two-column">
+          <SectionCard subtitle="本輪公布結果後仍存活的玩家。" title="本輪存活名單">
+            {alivePlayersInRound.length > 0 ? (
+              <RankList players={alivePlayersInRound} showMeta={false} showScore={false} />
+            ) : (
+              <p>本輪尚未公布結果，或目前沒有存活名單。</p>
+            )}
+          </SectionCard>
+
+          <SectionCard subtitle="本輪答錯或未作答而被淘汰的玩家。" title="本輪淘汰名單">
+            {eliminatedPlayersInRound.length > 0 ? (
+              <RankList players={eliminatedPlayersInRound} showMeta={false} showScore={false} />
+            ) : (
+              <p>本輪尚未有人被淘汰。</p>
+            )}
+          </SectionCard>
+        </div>
+      ) : null}
     </div>
   );
 }
