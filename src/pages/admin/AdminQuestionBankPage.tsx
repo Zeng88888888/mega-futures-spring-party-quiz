@@ -35,6 +35,7 @@ export function AdminQuestionBankPage() {
   const [bankTitle, setBankTitle] = useState("");
   const [bankDescription, setBankDescription] = useState("");
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
   const selectedBank = useMemo(
     () => banks.find((bank) => bank.id === selectedBankId) ?? null,
@@ -56,6 +57,7 @@ export function AdminQuestionBankPage() {
       setQuestions([]);
       return;
     }
+
     const loadedQuestions = await fetchQuestions(bankId);
     setQuestions(loadedQuestions);
   }
@@ -68,12 +70,23 @@ export function AdminQuestionBankPage() {
     if (!selectedBankId) {
       return;
     }
+
     void loadQuestions(selectedBankId);
     const activeBank = banks.find((bank) => bank.id === selectedBankId);
     setBankTitle(activeBank?.title ?? "");
     setBankDescription(activeBank?.description ?? "");
     setQuestionForm(emptyQuestionForm);
   }, [selectedBankId, banks]);
+
+  function startCreateBank() {
+    setSelectedBankId("");
+    setBankTitle("");
+    setBankDescription("");
+    setQuestionForm(emptyQuestionForm);
+    setError("");
+    setMessage("");
+    navigate("/admin/questions", { replace: true });
+  }
 
   function editQuestion(question?: Question) {
     if (!question) {
@@ -94,6 +107,12 @@ export function AdminQuestionBankPage() {
   }
 
   async function saveBank() {
+    if (!bankTitle.trim()) {
+      setError("請先輸入題庫名稱。");
+      setMessage("");
+      return;
+    }
+
     try {
       setError("");
       if (!selectedBankId) {
@@ -101,6 +120,7 @@ export function AdminQuestionBankPage() {
           title: bankTitle.trim(),
           description: bankDescription.trim()
         });
+        setMessage(`已新增題庫「${bank.title}」。`);
         await loadBanks(bank.id);
         navigate(`/admin/questions?bankId=${bank.id}`, { replace: true });
       } else {
@@ -109,23 +129,32 @@ export function AdminQuestionBankPage() {
           title: bankTitle.trim(),
           description: bankDescription.trim()
         });
+        setMessage(`已更新題庫「${bankTitle.trim()}」。`);
         await loadBanks(selectedBankId);
       }
     } catch (submissionError) {
       setError(submissionError instanceof Error ? submissionError.message : "儲存題庫失敗。");
+      setMessage("");
     }
   }
 
   async function removeBank() {
-    if (!selectedBankId) {
+    if (!selectedBankId || !selectedBank) {
+      return;
+    }
+
+    const confirmed = window.confirm(`確定要刪除題庫「${selectedBank.title}」嗎？`);
+    if (!confirmed) {
       return;
     }
 
     try {
       setError("");
+      setMessage("");
       await deleteQuestionBankRecord(selectedBankId);
       await loadBanks();
       navigate("/admin/questions", { replace: true });
+      setMessage(`已刪除題庫「${selectedBank.title}」。`);
     } catch (submissionError) {
       setError(submissionError instanceof Error ? submissionError.message : "刪除題庫失敗。");
     }
@@ -134,15 +163,18 @@ export function AdminQuestionBankPage() {
   async function saveQuestion() {
     if (!selectedBankId) {
       setError("請先選擇題庫。");
+      setMessage("");
       return;
     }
 
     try {
       setError("");
+      setMessage("");
       await upsertQuestionRecord({
         ...questionForm,
         bankId: selectedBankId
       });
+      setMessage(questionForm.id ? "題目已更新。" : "題目已新增。");
       editQuestion();
       await loadBanks(selectedBankId);
       await loadQuestions(selectedBankId);
@@ -152,12 +184,19 @@ export function AdminQuestionBankPage() {
   }
 
   async function removeQuestion(id: string) {
+    const confirmed = window.confirm("確定要刪除這一題嗎？");
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setError("");
+      setMessage("");
       await deleteQuestionRecord(id);
       if (questionForm.id === id) {
         editQuestion();
       }
+      setMessage("題目已刪除。");
       await loadBanks(selectedBankId);
       await loadQuestions(selectedBankId);
     } catch (submissionError) {
@@ -174,9 +213,10 @@ export function AdminQuestionBankPage() {
       </section>
 
       {error ? <p className="inline-error">{error}</p> : null}
+      {message ? <p className="inline-success">{message}</p> : null}
 
       <div className="grid-2 admin-two-column">
-        <SectionCard subtitle="可新增、編輯、刪除題庫。" title="題庫列表">
+        <SectionCard subtitle="先選題庫，再決定要更新既有題庫或建立新題庫。" title="題庫列表">
           <div className="stack-md">
             <div className="table-actions">
               {banks.map((bank) => (
@@ -185,6 +225,8 @@ export function AdminQuestionBankPage() {
                   key={bank.id}
                   onClick={() => {
                     setSelectedBankId(bank.id);
+                    setMessage("");
+                    setError("");
                     navigate(`/admin/questions?bankId=${bank.id}`, { replace: true });
                   }}
                   type="button"
@@ -192,6 +234,9 @@ export function AdminQuestionBankPage() {
                   {bank.title}（{bank.questionCount ?? 0} 題）
                 </button>
               ))}
+              <button className="button button--ghost" onClick={startCreateBank} type="button">
+                + 新增新題庫
+              </button>
             </div>
 
             <div className="form-grid">
@@ -212,18 +257,9 @@ export function AdminQuestionBankPage() {
 
             <div className="button-row">
               <button className="button button--primary" onClick={() => void saveBank()} type="button">
-                {selectedBankId ? "儲存題庫" : "新增題庫"}
+                {selectedBankId ? "儲存題庫" : "建立題庫"}
               </button>
-              <button
-                className="button button--ghost"
-                onClick={() => {
-                  setSelectedBankId("");
-                  setBankTitle("");
-                  setBankDescription("");
-                  setQuestionForm(emptyQuestionForm);
-                }}
-                type="button"
-              >
+              <button className="button button--ghost" onClick={startCreateBank} type="button">
                 清空表單
               </button>
               {selectedBankId ? (
@@ -270,13 +306,21 @@ export function AdminQuestionBankPage() {
                     </td>
                   </tr>
                 ))}
+                {selectedBank && questions.length === 0 ? (
+                  <tr>
+                    <td colSpan={3}>這個題庫目前還沒有題目。</td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
         </SectionCard>
       </div>
 
-      <SectionCard subtitle={selectedBank ? `目前新增到 ${selectedBank.title}` : "請先選擇題庫。"} title={questionForm.id ? "編輯題目" : "新增題目"}>
+      <SectionCard
+        subtitle={selectedBank ? `目前新增到 ${selectedBank.title}` : "請先選擇題庫。"}
+        title={questionForm.id ? "編輯題目" : "新增題目"}
+      >
         <div className="form-grid">
           <label>
             題目
@@ -289,19 +333,31 @@ export function AdminQuestionBankPage() {
           </label>
           <label>
             選項 A
-            <input onChange={(event) => setQuestionForm((current) => ({ ...current, optionA: event.target.value }))} value={questionForm.optionA} />
+            <input
+              onChange={(event) => setQuestionForm((current) => ({ ...current, optionA: event.target.value }))}
+              value={questionForm.optionA}
+            />
           </label>
           <label>
             選項 B
-            <input onChange={(event) => setQuestionForm((current) => ({ ...current, optionB: event.target.value }))} value={questionForm.optionB} />
+            <input
+              onChange={(event) => setQuestionForm((current) => ({ ...current, optionB: event.target.value }))}
+              value={questionForm.optionB}
+            />
           </label>
           <label>
             選項 C
-            <input onChange={(event) => setQuestionForm((current) => ({ ...current, optionC: event.target.value }))} value={questionForm.optionC} />
+            <input
+              onChange={(event) => setQuestionForm((current) => ({ ...current, optionC: event.target.value }))}
+              value={questionForm.optionC}
+            />
           </label>
           <label>
             選項 D
-            <input onChange={(event) => setQuestionForm((current) => ({ ...current, optionD: event.target.value }))} value={questionForm.optionD} />
+            <input
+              onChange={(event) => setQuestionForm((current) => ({ ...current, optionD: event.target.value }))}
+              value={questionForm.optionD}
+            />
           </label>
           <label>
             正確答案
@@ -334,7 +390,7 @@ export function AdminQuestionBankPage() {
               {questionForm.id ? "儲存題目" : "新增題目"}
             </button>
             <button className="button button--ghost" onClick={() => editQuestion()} type="button">
-              清空表單
+              清空題目
             </button>
           </div>
         </div>
