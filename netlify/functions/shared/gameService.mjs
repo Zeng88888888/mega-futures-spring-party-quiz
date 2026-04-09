@@ -627,7 +627,7 @@ export async function createGame(payload) {
       leaderboard_size: Number(payload.leaderboardSize || 10),
       competition_seconds:
         payload.mode === "competition"
-          ? DEFAULT_COMPETITION_SECONDS
+          ? Number(payload.competitionSeconds || DEFAULT_COMPETITION_SECONDS)
           : Number(payload.survivalThreshold || 10),
       status: "draft",
       current_round: 0
@@ -690,7 +690,7 @@ export async function updateGame(payload) {
       leaderboard_size: Number(payload.leaderboardSize || 10),
       competition_seconds:
         payload.mode === "competition"
-          ? DEFAULT_COMPETITION_SECONDS
+          ? Number(payload.competitionSeconds || DEFAULT_COMPETITION_SECONDS)
           : Number(payload.survivalThreshold || 10)
     })
     .eq("id", payload.gameId);

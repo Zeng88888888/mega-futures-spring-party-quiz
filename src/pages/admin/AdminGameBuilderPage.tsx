@@ -23,6 +23,7 @@ export function AdminGameBuilderPage() {
   const [bankId, setBankId] = useState("");
   const [questionCount, setQuestionCount] = useState(10);
   const [joinCode, setJoinCode] = useState(generateJoinCode);
+  const [competitionSeconds, setCompetitionSeconds] = useState(10);
   const [leaderboardSize, setLeaderboardSize] = useState(10);
   const [survivalThreshold, setSurvivalThreshold] = useState(10);
   const [error, setError] = useState("");
@@ -64,6 +65,7 @@ export function AdminGameBuilderPage() {
           setBankId(game.bankId);
           setQuestionCount(game.questionCount);
           setJoinCode(game.joinCode);
+          setCompetitionSeconds(game.competitionSeconds ?? 10);
           setLeaderboardSize(game.leaderboardSize);
           setSurvivalThreshold(resolvedSurvivalThreshold);
         }
@@ -102,6 +104,7 @@ export function AdminGameBuilderPage() {
         bankId,
         questionCount: Math.max(1, questionCount),
         joinCode: joinCode.trim().toUpperCase(),
+        competitionSeconds: Math.max(1, competitionSeconds),
         leaderboardSize: Math.max(1, leaderboardSize),
         survivalThreshold: Math.max(1, survivalThreshold)
       };
@@ -129,7 +132,7 @@ export function AdminGameBuilderPage() {
         <p className="eyebrow">主持人後台 / 場次設定</p>
         <h1>{isEditing ? "更新場次設定" : "建立新場次"}</h1>
         <p className="hero-text">
-          每個場次只能綁定一個題庫。排行榜顯示名次與淘汰賽結束門檻已分開設定，不會互相影響。
+          每個場次只能綁定一個題庫。競賽模式可自訂作答秒數與排行榜顯示名次，淘汰賽可另外設定結束門檻。
         </p>
       </section>
 
@@ -175,6 +178,19 @@ export function AdminGameBuilderPage() {
             場次識別碼
             <input onChange={(event) => setJoinCode(event.target.value.toUpperCase())} value={joinCode} />
           </label>
+
+          {mode === "competition" ? (
+            <label>
+              作答秒數
+              <input
+                min={1}
+                onChange={(event) => setCompetitionSeconds(Number(event.target.value))}
+                type="number"
+                value={competitionSeconds}
+              />
+              <span className="status-note">例如填 20，代表每題限時 20 秒。</span>
+            </label>
+          ) : null}
 
           <label>
             排行榜顯示名次

@@ -394,6 +394,7 @@ export async function createGameRecord(payload: {
   bankId: string;
   questionCount: number;
   joinCode: string;
+  competitionSeconds?: number;
   leaderboardSize: number;
   survivalThreshold?: number;
 }) {
@@ -411,6 +412,7 @@ export async function updateGameRecord(payload: {
   bankId: string;
   questionCount: number;
   joinCode: string;
+  competitionSeconds?: number;
   leaderboardSize: number;
   survivalThreshold?: number;
 }) {
