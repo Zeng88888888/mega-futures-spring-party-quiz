@@ -45,7 +45,11 @@ export function PlayerRoundResultPage() {
       setGame(snapshot.game);
       setPlayer(snapshot.player);
       setQuestion(snapshot.question);
-      setLeaderboard(snapshot.leaderboard.slice(0, snapshot.game?.leaderboardSize || 10));
+      setLeaderboard(
+        snapshot.game?.mode === "survival"
+          ? snapshot.leaderboard
+          : snapshot.leaderboard.slice(0, snapshot.game?.leaderboardSize || 10)
+      );
       setRoundResult(snapshot.roundResult);
       setPlayerRoundStatus(snapshot.playerRoundStatus);
 
@@ -68,8 +72,8 @@ export function PlayerRoundResultPage() {
   if (!game || !question) {
     return (
       <div className="player-layout">
-        <SectionCard title="等待結果">
-          <p>結果整理中，請稍候。</p>
+        <SectionCard title="讀取結果中">
+          <p>正在同步本題結果，請稍候。</p>
         </SectionCard>
       </div>
     );
@@ -92,13 +96,13 @@ export function PlayerRoundResultPage() {
         </SectionCard>
 
         {game.mode === "competition" ? (
-          <SectionCard title="即時前 10 名">
+          <SectionCard title={`目前前 ${game.leaderboardSize || 10} 名`}>
             <RankList players={leaderboard} showMeta={false} />
           </SectionCard>
         ) : (
-          <SectionCard title="淘汰賽結果">
+          <SectionCard title="淘汰結果">
             <div className="result-box">
-              <strong>{playerRoundStatus?.survived ? "still alive" : "已被淘汰"}</strong>
+              <strong>{playerRoundStatus?.survived ? "still alive" : "你已被淘汰"}</strong>
               <p>
                 存活 {roundResult?.aliveCount ?? "-"} 人 / 淘汰 {roundResult?.eliminatedCount ?? "-"} 人
               </p>
@@ -114,11 +118,11 @@ export function PlayerRoundResultPage() {
       ) : null}
 
       {player ? (
-        <SectionCard title="你的結果">
+        <SectionCard title="你的本題狀態">
           <ul className="plain-list">
             <li>玩家：{player.nickname}</li>
-            <li>狀態：{player.status}</li>
-            <li>本題結果：{playerRoundStatus?.answerStatus ?? "-"}</li>
+            <li>目前狀態：{player.status}</li>
+            <li>本題判定：{playerRoundStatus?.answerStatus ?? "-"}</li>
           </ul>
         </SectionCard>
       ) : null}

@@ -119,8 +119,9 @@ function mapGame(row: GameRow): LiveGame {
     currentRound: row.current_round,
     status: row.status,
     joinCode: row.join_code,
-    competitionSeconds: row.competition_seconds,
+    competitionSeconds: row.mode === "competition" ? row.competition_seconds : null,
     leaderboardSize: row.leaderboard_size,
+    survivalThreshold: row.mode === "survival" ? row.competition_seconds : null,
     startedAt: row.started_at,
     endedAt: row.ended_at
   };
@@ -394,6 +395,7 @@ export async function createGameRecord(payload: {
   questionCount: number;
   joinCode: string;
   leaderboardSize: number;
+  survivalThreshold?: number;
 }) {
   const result = await runAdminAction<{ game: GameRow | null }>("createGame", payload);
   if (!result.game) {
@@ -410,6 +412,7 @@ export async function updateGameRecord(payload: {
   questionCount: number;
   joinCode: string;
   leaderboardSize: number;
+  survivalThreshold?: number;
 }) {
   const result = await runAdminAction<{ game: GameRow | null }>("updateGame", payload);
   return result.game ? mapGame(result.game) : null;
@@ -514,6 +517,7 @@ export async function fetchPlayerSnapshot(gameId: string, playerId: string) {
           currentRound: result.game.currentRound,
           competitionSeconds: result.game.competitionSeconds,
           leaderboardSize: result.game.leaderboardSize,
+          survivalThreshold: result.game.survivalThreshold,
           startedAt: result.game.startedAt,
           endedAt: result.game.endedAt,
           joinCode: ""

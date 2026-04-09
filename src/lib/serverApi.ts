@@ -86,6 +86,7 @@ export async function readJoinableGames() {
       currentRound: number;
       joinCode: string;
       competitionSeconds?: number | null;
+      survivalThreshold?: number | null;
       leaderboardSize: number;
       startedAt?: string | null;
       endedAt?: string | null;

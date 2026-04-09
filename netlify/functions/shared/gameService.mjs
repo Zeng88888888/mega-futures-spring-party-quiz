@@ -483,7 +483,8 @@ export async function listJoinableGames() {
         questionCount: row.question_count,
         currentRound: row.current_round,
         joinCode: row.join_code,
-        competitionSeconds: row.competition_seconds,
+        competitionSeconds: row.mode === "competition" ? row.competition_seconds : null,
+        survivalThreshold: row.mode === "survival" ? row.competition_seconds : null,
         leaderboardSize: row.leaderboard_size,
         startedAt: row.started_at,
         endedAt: row.ended_at
@@ -624,7 +625,10 @@ export async function createGame(payload) {
       question_count: questionCount,
       join_code: joinCode,
       leaderboard_size: Number(payload.leaderboardSize || 10),
-      competition_seconds: DEFAULT_COMPETITION_SECONDS,
+      competition_seconds:
+        payload.mode === "competition"
+          ? DEFAULT_COMPETITION_SECONDS
+          : Number(payload.survivalThreshold || 10),
       status: "draft",
       current_round: 0
     })
@@ -683,7 +687,11 @@ export async function updateGame(payload) {
       bank_id: bank.id,
       question_count: questionCount,
       join_code: joinCode,
-      leaderboard_size: Number(payload.leaderboardSize || 10)
+      leaderboard_size: Number(payload.leaderboardSize || 10),
+      competition_seconds:
+        payload.mode === "competition"
+          ? DEFAULT_COMPETITION_SECONDS
+          : Number(payload.survivalThreshold || 10)
     })
     .eq("id", payload.gameId);
 
@@ -1166,7 +1174,7 @@ export async function resolveRound(payload) {
     throw roundError;
   }
 
-  if (game.mode === "survival" && aliveCount <= (game.leaderboard_size || 10)) {
+  if (game.mode === "survival" && aliveCount <= Number(game.competition_seconds || 10)) {
     await endGame({ gameId: payload.gameId });
     return;
   }
@@ -1306,6 +1314,10 @@ export async function getPlayerSnapshot(payload) {
 
   const question = game.current_round > 0 ? await fetchQuestionForRound(payload.gameId, game.current_round) : null;
   const currentAnswer = answers.find((answer) => answer.player_id === payload.playerId) ?? null;
+  const survivalVisibleCount =
+    game.mode === "survival"
+      ? Math.max(game.leaderboard_size || 10, Number(roundResults.data?.alive_count ?? 0))
+      : game.leaderboard_size || 10;
 
   return {
     game: {
@@ -1317,7 +1329,8 @@ export async function getPlayerSnapshot(payload) {
       bankTitle: game.bank_title,
       questionCount: game.question_count,
       currentRound: game.current_round,
-      competitionSeconds: game.competition_seconds,
+      competitionSeconds: game.mode === "competition" ? game.competition_seconds : null,
+      survivalThreshold: game.mode === "survival" ? game.competition_seconds : null,
       leaderboardSize: game.leaderboard_size,
       startedAt: game.started_at,
       endedAt: game.ended_at
@@ -1354,7 +1367,7 @@ export async function getPlayerSnapshot(payload) {
           score: currentAnswer.score
         }
       : null,
-    leaderboard: sanitizeLeaderboard(players, game.mode).slice(0, game.leaderboard_size || 10),
+    leaderboard: sanitizeLeaderboard(players, game.mode).slice(0, survivalVisibleCount),
     roundResult: roundResults.data,
     playerRoundStatus: roundStatuses.data
   };

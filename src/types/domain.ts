@@ -59,6 +59,7 @@ export interface LiveGame {
   joinCode: string;
   competitionSeconds?: number | null;
   leaderboardSize: number;
+  survivalThreshold?: number | null;
   startedAt?: string | null;
   endedAt?: string | null;
 }

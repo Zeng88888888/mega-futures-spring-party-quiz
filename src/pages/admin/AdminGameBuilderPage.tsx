@@ -11,16 +11,6 @@ function generateJoinCode() {
   return `MEGA${stamp}${random}`;
 }
 
-function getLeaderboardFieldLabel(mode: GameMode) {
-  return mode === "competition" ? "排行榜顯示名次" : "淘汰賽結束門檻（剩餘人數）";
-}
-
-function getLeaderboardFieldHint(mode: GameMode) {
-  return mode === "competition"
-    ? "例如填 10，代表排行榜顯示前 10 名。"
-    : "例如填 10，代表剩餘人數小於或等於 10 人時就結束比賽。";
-}
-
 export function AdminGameBuilderPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -34,6 +24,7 @@ export function AdminGameBuilderPage() {
   const [questionCount, setQuestionCount] = useState(10);
   const [joinCode, setJoinCode] = useState(generateJoinCode);
   const [leaderboardSize, setLeaderboardSize] = useState(10);
+  const [survivalThreshold, setSurvivalThreshold] = useState(10);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -63,12 +54,18 @@ export function AdminGameBuilderPage() {
             return;
           }
 
+          const resolvedSurvivalThreshold =
+            game.mode === "survival" && (game.survivalThreshold ?? 10) === 10
+              ? game.leaderboardSize
+              : (game.survivalThreshold ?? 10);
+
           setTitle(game.title);
           setMode(game.mode);
           setBankId(game.bankId);
           setQuestionCount(game.questionCount);
           setJoinCode(game.joinCode);
           setLeaderboardSize(game.leaderboardSize);
+          setSurvivalThreshold(resolvedSurvivalThreshold);
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -105,7 +102,8 @@ export function AdminGameBuilderPage() {
         bankId,
         questionCount: Math.max(1, questionCount),
         joinCode: joinCode.trim().toUpperCase(),
-        leaderboardSize: Math.max(1, leaderboardSize)
+        leaderboardSize: Math.max(1, leaderboardSize),
+        survivalThreshold: Math.max(1, survivalThreshold)
       };
 
       if (isEditing) {
@@ -131,7 +129,7 @@ export function AdminGameBuilderPage() {
         <p className="eyebrow">主持人後台 / 場次設定</p>
         <h1>{isEditing ? "更新場次設定" : "建立新場次"}</h1>
         <p className="hero-text">
-          每個場次只能綁定一個題庫。競賽模式可設定排行榜顯示名次，淘汰賽則可設定剩餘幾人內自動結束。
+          每個場次只能綁定一個題庫。排行榜顯示名次與淘汰賽結束門檻已分開設定，不會互相影響。
         </p>
       </section>
 
@@ -179,15 +177,28 @@ export function AdminGameBuilderPage() {
           </label>
 
           <label>
-            {getLeaderboardFieldLabel(mode)}
+            排行榜顯示名次
             <input
               min={1}
               onChange={(event) => setLeaderboardSize(Number(event.target.value))}
               type="number"
               value={leaderboardSize}
             />
-            <span className="status-note">{getLeaderboardFieldHint(mode)}</span>
+            <span className="status-note">例如填 10，代表排行榜顯示前 10 名。</span>
           </label>
+
+          {mode === "survival" ? (
+            <label>
+              淘汰賽結束門檻（剩餘人數）
+              <input
+                min={1}
+                onChange={(event) => setSurvivalThreshold(Number(event.target.value))}
+                type="number"
+                value={survivalThreshold}
+              />
+              <span className="status-note">例如填 10，代表剩餘人數小於或等於 10 人時就結束比賽。</span>
+            </label>
+          ) : null}
 
           {selectedBank ? (
             <div className="info-box">
