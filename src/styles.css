@@ -435,6 +435,15 @@ button {
   box-shadow: var(--shadow);
 }
 
+.answer-card:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.answer-card:disabled:hover {
+  transform: none;
+}
+
 .answer-card span {
   display: inline-flex;
   width: 2.3rem;

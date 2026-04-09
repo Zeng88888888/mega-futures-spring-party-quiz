@@ -5,6 +5,10 @@ import { fetchPlayerSnapshot, submitAnswerRecord, subscribeToGameRealtime } from
 import { getPlayerSession } from "../../lib/playerSession";
 import type { LiveGame, Player, PlayerAnswer, Question } from "../../types/domain";
 
+function formatMode(mode: LiveGame["mode"]) {
+  return mode === "competition" ? "競賽模式" : "淘汰賽模式";
+}
+
 export function PlayerQuestionPage() {
   const navigate = useNavigate();
   const session = getPlayerSession();
@@ -14,6 +18,7 @@ export function PlayerQuestionPage() {
   const [answer, setAnswer] = useState<PlayerAnswer | null>(null);
   const [error, setError] = useState("");
   const [remainingMs, setRemainingMs] = useState<number | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const currentSession = session;
@@ -34,7 +39,8 @@ export function PlayerQuestionPage() {
       setGame(snapshot.game);
       setPlayer(snapshot.player);
       setQuestion(snapshot.question);
-      setAnswer(snapshot.answer);
+      setAnswer((currentAnswer) => currentAnswer ?? snapshot.answer);
+      setIsSubmitting(false);
 
       if (snapshot.game?.status === "round_result") {
         navigate("/player/round-result");
@@ -85,39 +91,57 @@ export function PlayerQuestionPage() {
 
   async function submit(option: "A" | "B" | "C" | "D") {
     const currentSession = session;
-    if (!currentSession || !game) {
+    if (!currentSession || !game || !question || answer || isSubmitting) {
       return;
     }
 
+    const optimisticAnswer: PlayerAnswer = {
+      playerId: currentSession.playerId,
+      questionId: question.id,
+      roundNo: game.currentRound,
+      selectedOption: option,
+      answerStatus: "wrong",
+      isCorrect: false,
+      responseMs: game.mode === "competition" && remainingMs !== null ? Math.max(0, remainingMs) : null,
+      score: 0,
+      answeredAt: new Date().toISOString()
+    };
+
+    setError("");
+    setIsSubmitting(true);
+    setAnswer(optimisticAnswer);
+
     try {
-      setError("");
       await submitAnswerRecord({
         gameId: game.id,
         playerId: currentSession.playerId,
         selectedOption: option
       });
-      const snapshot = await fetchPlayerSnapshot(game.id, currentSession.playerId);
-      setAnswer(snapshot.answer);
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "送出答案失敗。");
+      setAnswer(null);
+      setIsSubmitting(false);
+      setError(submissionError instanceof Error ? submissionError.message : "送出答案失敗，請再試一次。");
     }
   }
 
   if (!game || !question) {
     return (
       <div className="player-layout">
-        <SectionCard title="等待題目">
-          <p>目前尚未開始作答，請稍候。</p>
+        <SectionCard title="載入題目中">
+          <p>正在同步最新題目與作答狀態，請稍候。</p>
         </SectionCard>
       </div>
     );
   }
 
+  const answerLocked = Boolean(answer);
+  const submittedOption = answer?.selectedOption ?? "-";
+
   return (
     <div className="player-layout">
       <section className="player-stage">
         <div className="stage-meta">
-          <span className="pill">{game.mode === "competition" ? "競賽模式" : "淘汰賽模式"}</span>
+          <span className="pill">{formatMode(game.mode)}</span>
           <span className="pill">
             第 {game.currentRound} / {game.questionCount} 題
           </span>
@@ -131,20 +155,32 @@ export function PlayerQuestionPage() {
       </section>
 
       <SectionCard
-        subtitle={answer ? "等待主持人公布結果。" : player ? `玩家：${player.nickname}` : undefined}
-        title={answer ? "已送出答案" : "請選擇答案"}
+        title={answerLocked ? "已送出答案" : "請選擇答案"}
+        subtitle={
+          answerLocked
+            ? "答案已鎖定，等待主持人公布結果。"
+            : player
+              ? `${player.nickname}，請在確認後點選一個選項。`
+              : undefined
+        }
       >
-        {answer ? (
+        {answerLocked ? (
           <div className="result-box">
-            <strong>{answer.selectedOption}</strong>
-            <p>答案已鎖定，請等待結果公布。</p>
+            <strong>{submittedOption}</strong>
+            <p>{isSubmitting ? "答案送出中，已先為你鎖定選項。" : "答案已送出，等待主持人公布結果。"}</p>
           </div>
         ) : (
           <div className="answer-grid">
             {question.options.map((option, index) => {
               const code = String.fromCharCode(65 + index) as "A" | "B" | "C" | "D";
               return (
-                <button className="answer-card" key={option} onClick={() => void submit(code)} type="button">
+                <button
+                  className="answer-card"
+                  disabled={answerLocked || isSubmitting}
+                  key={`${question.id}-${code}`}
+                  onClick={() => void submit(code)}
+                  type="button"
+                >
                   <span>{code}</span>
                   <strong>{option}</strong>
                 </button>
