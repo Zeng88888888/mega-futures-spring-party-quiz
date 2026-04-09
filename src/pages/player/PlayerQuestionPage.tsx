@@ -154,6 +154,8 @@ export function PlayerQuestionPage() {
         ? Math.min(Math.max(Date.now() - startedAtMs, 0), competitionDurationMs)
         : null;
 
+    const answeredAt = new Date().toISOString();
+
     setError("");
     setIsSubmitting(true);
     setAnswer({
@@ -165,14 +167,15 @@ export function PlayerQuestionPage() {
       isCorrect: false,
       responseMs: actualResponseMs,
       score: 0,
-      answeredAt: new Date().toISOString()
+      answeredAt
     });
 
     try {
       await submitAnswerRecord({
         gameId: game.id,
         playerId: session.playerId,
-        selectedOption: option
+        selectedOption: option,
+        answeredAt
       });
     } catch (submissionError) {
       setAnswer(null);

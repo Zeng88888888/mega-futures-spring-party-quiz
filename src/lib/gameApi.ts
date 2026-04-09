@@ -490,6 +490,7 @@ export async function submitAnswerRecord(params: {
   gameId: string;
   playerId: string;
   selectedOption: "A" | "B" | "C" | "D";
+  answeredAt: string;
 }) {
   await submitAnswerServer(params);
 }

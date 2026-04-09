@@ -1054,9 +1054,20 @@ export async function submitAnswer(payload) {
     throw new Error("本題已送出過答案。");
   }
 
+  const clientAnsweredAt =
+    typeof payload.answeredAt === "string" && payload.answeredAt
+      ? new Date(payload.answeredAt)
+      : new Date();
+  const answeredAtMs = clientAnsweredAt.getTime();
+
+  if (Number.isNaN(answeredAtMs)) {
+    throw new Error("作答時間格式錯誤。");
+  }
+
   if (game.mode === "competition" && game.started_at && game.competition_seconds) {
     const startedAtMs = new Date(game.started_at).getTime();
-    if (Date.now() > startedAtMs + game.competition_seconds * 1000) {
+    const deadlineMs = startedAtMs + game.competition_seconds * 1000;
+    if (answeredAtMs > deadlineMs) {
       throw new Error("本題作答時間已結束。");
     }
   }
@@ -1067,7 +1078,7 @@ export async function submitAnswer(payload) {
     player_id: payload.playerId,
     round_no: game.current_round,
     selected_option: payload.selectedOption,
-    answered_at: new Date().toISOString()
+    answered_at: clientAnsweredAt.toISOString()
   });
 
   if (error) {

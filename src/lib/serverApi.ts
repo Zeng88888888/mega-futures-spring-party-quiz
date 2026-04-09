@@ -110,6 +110,7 @@ export async function submitAnswerServer(payload: {
   gameId: string;
   playerId: string;
   selectedOption: "A" | "B" | "C" | "D";
+  answeredAt: string;
 }) {
   return callFunction<{ ok: true }>("player-action", { action: "submitAnswer", payload });
 }
