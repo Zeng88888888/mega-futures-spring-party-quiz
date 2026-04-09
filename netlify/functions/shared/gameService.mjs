@@ -397,7 +397,7 @@ export async function listJoinableGames() {
   const { data, error } = await supabase
     .from("games")
     .select(GAME_SELECT)
-    .in("status", ["draft", "registering"])
+    .in("status", ["draft", "registering", "live_question", "round_result"])
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -473,14 +473,10 @@ export async function joinGame(payload) {
     throw new Error("找不到對應場次。");
   }
 
-  if (game.status !== "draft" && game.status !== "registering") {
-    throw new Error("場次已開始，現在不能再加入。");
-  }
-
   const employeeId = String(payload.employeeId).trim();
   const { data: duplicate, error: duplicateError } = await supabase
     .from("players")
-    .select("id")
+    .select("id, game_id, nickname, department, employee_id, status, is_valid, total_score, total_response_ms, joined_at")
     .eq("game_id", game.id)
     .eq("employee_id", employeeId)
     .maybeSingle();
@@ -490,7 +486,18 @@ export async function joinGame(payload) {
   }
 
   if (duplicate) {
-    throw new Error("此員編已加入本場次。");
+    if (!duplicate.is_valid) {
+      throw new Error("此員編目前已被標記為無效，請洽主持人協助。");
+    }
+
+    return {
+      game,
+      player: duplicate
+    };
+  }
+
+  if (game.status !== "draft" && game.status !== "registering") {
+    throw new Error("場次已開始，只有已報名玩家可以重新登入。");
   }
 
   const { data, error } = await supabase
@@ -785,6 +792,54 @@ export async function endGame(payload) {
   if (error) {
     throw error;
   }
+}
+
+export async function resetGame(payload) {
+  const supabase = getSupabaseAdmin();
+  const game = await fetchGameById(payload.gameId);
+
+  if (!game) {
+    throw new Error("找不到要重設的場次。");
+  }
+
+  await Promise.all([
+    supabase.from("answers").delete().eq("game_id", payload.gameId),
+    supabase.from("round_results").delete().eq("game_id", payload.gameId),
+    supabase.from("player_round_statuses").delete().eq("game_id", payload.gameId)
+  ]);
+
+  const players = await fetchPlayers(payload.gameId);
+  for (const player of players) {
+    const nextStatus = player.is_valid ? "waiting" : "invalid";
+    const { error: playerError } = await supabase
+      .from("players")
+      .update({
+        status: nextStatus,
+        total_score: 0,
+        total_response_ms: 0
+      })
+      .eq("id", player.id);
+
+    if (playerError) {
+      throw playerError;
+    }
+  }
+
+  const { error } = await supabase
+    .from("games")
+    .update({
+      status: "draft",
+      current_round: 0,
+      started_at: null,
+      ended_at: null
+    })
+    .eq("id", payload.gameId);
+
+  if (error) {
+    throw error;
+  }
+
+  return { game: await fetchGameById(payload.gameId) };
 }
 
 export async function submitAnswer(payload) {

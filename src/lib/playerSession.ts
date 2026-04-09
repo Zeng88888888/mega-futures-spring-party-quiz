@@ -6,7 +6,7 @@ export interface PlayerSession {
 }
 
 export function getPlayerSession(): PlayerSession | null {
-  const raw = sessionStorage.getItem(PLAYER_SESSION_KEY);
+  const raw = localStorage.getItem(PLAYER_SESSION_KEY) ?? sessionStorage.getItem(PLAYER_SESSION_KEY);
   if (!raw) {
     return null;
   }
@@ -19,9 +19,11 @@ export function getPlayerSession(): PlayerSession | null {
 }
 
 export function setPlayerSession(session: PlayerSession) {
+  localStorage.setItem(PLAYER_SESSION_KEY, JSON.stringify(session));
   sessionStorage.setItem(PLAYER_SESSION_KEY, JSON.stringify(session));
 }
 
 export function clearPlayerSession() {
+  localStorage.removeItem(PLAYER_SESSION_KEY);
   sessionStorage.removeItem(PLAYER_SESSION_KEY);
 }

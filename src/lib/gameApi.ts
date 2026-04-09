@@ -413,6 +413,10 @@ export async function openRegistrationRecord(gameId: string) {
   await runAdminAction("openRegistration", { gameId });
 }
 
+export async function resetGameRecord(gameId: string) {
+  await runAdminAction("resetGame", { gameId });
+}
+
 export async function startGameRecord(gameId: string) {
   await runAdminAction("startGame", { gameId });
 }

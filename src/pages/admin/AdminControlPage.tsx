@@ -7,6 +7,7 @@ import {
   fetchAdminControlSnapshot,
   fetchGames,
   openRegistrationRecord,
+  resetGameRecord,
   resolveCurrentRoundRecord,
   startGameRecord,
   startNextRoundRecord
@@ -21,8 +22,8 @@ function formatStatus(status: LiveGame["status"]) {
   const map: Record<LiveGame["status"], string> = {
     draft: "草稿",
     registering: "報名中",
-    live_question: "進行中",
-    round_result: "公佈結果",
+    live_question: "作答中",
+    round_result: "公布結果",
     ended: "已結束"
   };
   return map[status] ?? status;
@@ -101,7 +102,7 @@ export function AdminControlPage() {
         setSubmittedCount(snapshot.submittedCount);
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "讀取控制台資料失敗。");
+          setError(loadError instanceof Error ? loadError.message : "讀取控制台失敗，請稍後再試。");
         }
       }
     }
@@ -131,16 +132,29 @@ export function AdminControlPage() {
       setError("");
       await action();
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "場次操作失敗。");
+      setError(actionError instanceof Error ? actionError.message : "執行操作失敗，請稍後再試。");
     }
+  }
+
+  async function handleResetGame() {
+    if (!game) {
+      return;
+    }
+
+    const confirmed = window.confirm("重設後會清除本場作答紀錄、每輪結果與分數，確定要重新開始嗎？");
+    if (!confirmed) {
+      return;
+    }
+
+    await runAction(() => resetGameRecord(game.id));
   }
 
   if (!game) {
     return (
       <div className="admin-layout">
-        <SectionCard subtitle="請先建立場次後再進入控制台。" title="尚未建立場次">
+        <SectionCard subtitle="目前還沒有場次，先建立一場才能開始控制流程。" title="尚未建立場次">
           <Link className="button button--primary" to="/admin/games/new">
-            建立場次
+            建立新場次
           </Link>
         </SectionCard>
       </div>
@@ -173,12 +187,15 @@ export function AdminControlPage() {
           <button className="button button--ghost" onClick={() => void runAction(() => startNextRoundRecord(game.id))} type="button">
             下一題
           </button>
+          <button className="button button--ghost" onClick={() => void handleResetGame()} type="button">
+            重設場次
+          </button>
         </div>
       </section>
 
       {error ? <p className="inline-error">{error}</p> : null}
 
-      <SectionCard subtitle="可切換不同場次進行控制。" title="選擇場次">
+      <SectionCard subtitle="可切換不同場次查看目前題目、玩家與排行榜。" title="切換場次">
         <div className="form-grid">
           <label>
             目前場次
@@ -206,11 +223,11 @@ export function AdminControlPage() {
           label="本題已送出"
           value={`${submittedCount} / ${game.mode === "survival" ? alivePlayers.length : validPlayers.length}`}
         />
-        <MetricCard label="題庫" value={game.bankTitle ?? "-"} />
+        <MetricCard label="使用題庫" value={game.bankTitle ?? "-"} />
       </div>
 
       <div className="grid-2 admin-two-column">
-        <SectionCard subtitle="主持人公布結果後，玩家端會即時切到結果頁。" title="本題資訊">
+        <SectionCard subtitle="主持人公布結果後，玩家端才會切到結果頁。" title="本題資訊">
           {question ? (
             <div className="stack-md">
               <div className="result-box result-box--compact">
@@ -219,7 +236,7 @@ export function AdminControlPage() {
               </div>
               <ul className="plain-list">
                 {question.options.map((option, index) => (
-                  <li key={option}>
+                  <li key={`${question.id}-${index}`}>
                     {String.fromCharCode(65 + index)}. {option}
                   </li>
                 ))}
@@ -232,8 +249,8 @@ export function AdminControlPage() {
 
         <SectionCard
           aside={<Link to={`/admin/players?gameId=${game.id}`}>管理玩家</Link>}
-          subtitle="無效玩家已自動排除。"
-          title={game.mode === "competition" ? "即時前 10 名" : "目前存活名單"}
+          subtitle={game.mode === "competition" ? "無效玩家已自動排除。" : "只顯示目前仍存活的玩家。"}
+          title={game.mode === "competition" ? "即時前 10 名" : "存活玩家名單"}
         >
           <RankList
             players={
@@ -247,7 +264,7 @@ export function AdminControlPage() {
         </SectionCard>
       </div>
 
-      <SectionCard subtitle="淘汰賽可查看每一輪剩餘人數與淘汰人數。" title="回合紀錄">
+      <SectionCard subtitle="淘汰賽會顯示每輪存活與淘汰人數。" title="回合紀錄">
         <div className="table-card">
           <table>
             <thead>
@@ -267,6 +284,11 @@ export function AdminControlPage() {
                   <td>{item.eliminatedCount ?? "-"}</td>
                 </tr>
               ))}
+              {roundHistory.length === 0 ? (
+                <tr>
+                  <td colSpan={4}>目前還沒有回合紀錄。</td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
