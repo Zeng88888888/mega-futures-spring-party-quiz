@@ -376,6 +376,7 @@ export async function fetchAdminControlSnapshot(gameId: string) {
     submittedCount: number;
     roundHistory: RoundResultRow[];
     roundStatuses: PlayerRoundStatusRow[];
+    roundStatusHistory: PlayerRoundStatusRow[];
   }>("getControlSnapshot", { gameId });
 
   return {
@@ -384,7 +385,8 @@ export async function fetchAdminControlSnapshot(gameId: string) {
     question: result.question ? mapQuestion(result.question, result.question.order_no) : null,
     submittedCount: result.submittedCount ?? 0,
     roundHistory: (result.roundHistory ?? []).map(mapRoundResult),
-    roundStatuses: (result.roundStatuses ?? []).map(mapPlayerRoundStatus)
+    roundStatuses: (result.roundStatuses ?? []).map(mapPlayerRoundStatus),
+    roundStatusHistory: (result.roundStatusHistory ?? []).map(mapPlayerRoundStatus)
   };
 }
 
@@ -480,6 +482,10 @@ export async function deletePlayerRecord(playerId: string) {
   await runAdminAction("deletePlayer", { playerId });
 }
 
+export async function deletePlayersRecord(playerIds: string[]) {
+  await runAdminAction("deletePlayers", { playerIds });
+}
+
 export async function submitAnswerRecord(params: {
   gameId: string;
   playerId: string;
@@ -555,8 +561,16 @@ export async function fetchPlayerSnapshot(gameId: string, playerId: string) {
           roundNo: Number(result.game.currentRound ?? 0),
           selectedOption: result.answer.selectedOption,
           answerStatus: result.answer.answerStatus,
-          isCorrect: result.answer.answerStatus === "correct",
-          score: Number(result.answer.score ?? 0)
+          isCorrect:
+            typeof result.answer.isCorrect === "boolean"
+              ? result.answer.isCorrect
+              : result.answer.answerStatus === "correct",
+          responseMs:
+            result.answer.responseMs === null || result.answer.responseMs === undefined
+              ? null
+              : Number(result.answer.responseMs),
+          score: Number(result.answer.score ?? 0),
+          answeredAt: result.answer.answeredAt ?? null
         } as PlayerAnswer)
       : null,
     leaderboard: (result.leaderboard ?? []).map(

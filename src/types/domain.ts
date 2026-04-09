@@ -98,4 +98,5 @@ export interface ControlSnapshot {
   submittedCount: number;
   roundHistory: RoundResult[];
   roundStatuses: PlayerRoundStatus[];
+  roundStatusHistory?: PlayerRoundStatus[];
 }

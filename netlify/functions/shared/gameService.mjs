@@ -519,11 +519,16 @@ export async function listAnswersForRound(payload) {
 
 export async function listPlayerRoundStatuses(payload) {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
+  let query = supabase
     .from("player_round_statuses")
     .select("player_id, round_no, answer_status, survived, eliminated_in_round")
-    .eq("game_id", payload.gameId)
-    .eq("round_no", payload.roundNo);
+    .eq("game_id", payload.gameId);
+
+  if (payload.roundNo) {
+    query = query.eq("round_no", payload.roundNo);
+  }
+
+  const { data, error } = await query.order("round_no", { ascending: true });
 
   if (error) {
     throw error;
@@ -833,6 +838,45 @@ export async function deletePlayer(payload) {
 
   await rebuildRoundResultCounts(player.game_id);
   return { ok: true };
+}
+
+export async function deletePlayers(payload) {
+  const playerIds = Array.isArray(payload.playerIds)
+    ? payload.playerIds.filter((value) => typeof value === "string" && value.trim())
+    : [];
+
+  if (playerIds.length === 0) {
+    throw new Error("請先選擇要刪除的玩家。");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data: players, error: playersError } = await supabase
+    .from("players")
+    .select("id, game_id")
+    .in("id", playerIds);
+
+  if (playersError) {
+    throw playersError;
+  }
+
+  if (!players || players.length === 0) {
+    throw new Error("找不到要刪除的玩家資料。");
+  }
+
+  const { error: deleteError } = await supabase.from("players").delete().in("id", players.map((player) => player.id));
+  if (deleteError) {
+    throw deleteError;
+  }
+
+  const gameIds = [...new Set(players.map((player) => player.game_id))];
+  for (const gameId of gameIds) {
+    await rebuildRoundResultCounts(gameId);
+  }
+
+  return {
+    ok: true,
+    deletedCount: players.length
+  };
 }
 
 export async function openRegistration(payload) {
@@ -1364,7 +1408,10 @@ export async function getPlayerSnapshot(payload) {
       ? {
           selectedOption: currentAnswer.selected_option,
           answerStatus: currentAnswer.answer_status,
-          score: currentAnswer.score
+          isCorrect: currentAnswer.is_correct,
+          responseMs: currentAnswer.response_ms,
+          score: currentAnswer.score,
+          answeredAt: currentAnswer.answered_at
         }
       : null,
     leaderboard: sanitizeLeaderboard(players, game.mode).slice(0, survivalVisibleCount),
@@ -1398,7 +1445,7 @@ export async function getControlSnapshot(payload) {
     throw new Error("找不到場次。");
   }
 
-  const [players, answers, roundResults, roundStatuses] = await Promise.all([
+  const [players, answers, roundResults, roundStatuses, roundStatusHistory] = await Promise.all([
     fetchPlayers(payload.gameId),
     game.current_round > 0 ? fetchAnswersForRound(payload.gameId, game.current_round) : Promise.resolve([]),
     getSupabaseAdmin()
@@ -1412,7 +1459,12 @@ export async function getControlSnapshot(payload) {
           .select("player_id, round_no, answer_status, survived, eliminated_in_round")
           .eq("game_id", payload.gameId)
           .eq("round_no", game.current_round)
-      : Promise.resolve({ data: [], error: null })
+      : Promise.resolve({ data: [], error: null }),
+    getSupabaseAdmin()
+      .from("player_round_statuses")
+      .select("player_id, round_no, answer_status, survived, eliminated_in_round")
+      .eq("game_id", payload.gameId)
+      .order("round_no", { ascending: true })
   ]);
 
   const question = game.current_round > 0 ? await fetchQuestionForRound(payload.gameId, game.current_round) : null;
@@ -1423,7 +1475,8 @@ export async function getControlSnapshot(payload) {
     question,
     submittedCount: answers.length,
     roundHistory: roundResults.data ?? [],
-    roundStatuses: roundStatuses.data ?? []
+    roundStatuses: roundStatuses.data ?? [],
+    roundStatusHistory: roundStatusHistory.data ?? []
   };
 }
 

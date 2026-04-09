@@ -55,11 +55,6 @@ export function AdminGameBuilderPage() {
             return;
           }
 
-          const resolvedSurvivalThreshold =
-            game.mode === "survival" && (game.survivalThreshold ?? 10) === 10
-              ? game.leaderboardSize
-              : (game.survivalThreshold ?? 10);
-
           setTitle(game.title);
           setMode(game.mode);
           setBankId(game.bankId);
@@ -67,7 +62,7 @@ export function AdminGameBuilderPage() {
           setJoinCode(game.joinCode);
           setCompetitionSeconds(game.competitionSeconds ?? 10);
           setLeaderboardSize(game.leaderboardSize);
-          setSurvivalThreshold(resolvedSurvivalThreshold);
+          setSurvivalThreshold(game.survivalThreshold ?? 10);
         }
       } catch (loadError) {
         if (!cancelled) {

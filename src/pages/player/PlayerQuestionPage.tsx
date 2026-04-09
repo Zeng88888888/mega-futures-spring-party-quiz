@@ -17,6 +17,24 @@ function formatElapsedSeconds(responseMs?: number | null) {
   return (responseMs / 1000).toFixed(2);
 }
 
+function createTimeoutAnswer(
+  playerId: string,
+  questionId: string,
+  roundNo: number,
+  responseMs: number
+): PlayerAnswer {
+  return {
+    playerId,
+    questionId,
+    roundNo,
+    answerStatus: "no_answer",
+    isCorrect: false,
+    responseMs,
+    score: 0,
+    answeredAt: null
+  };
+}
+
 export function PlayerQuestionPage() {
   const navigate = useNavigate();
   const session = getPlayerSession();
@@ -29,17 +47,16 @@ export function PlayerQuestionPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    const currentSession = session;
-    if (!currentSession) {
+    if (!session) {
       navigate("/player/join");
       return;
     }
-    const sessionData = currentSession;
+    const currentSession = session;
 
     let cancelled = false;
 
     async function load() {
-      const snapshot = await fetchPlayerSnapshot(sessionData.gameId, sessionData.playerId);
+      const snapshot = await fetchPlayerSnapshot(currentSession.gameId, currentSession.playerId);
       if (cancelled) {
         return;
       }
@@ -47,24 +64,40 @@ export function PlayerQuestionPage() {
       setGame(snapshot.game);
       setPlayer(snapshot.player);
       setQuestion(snapshot.question);
-      setAnswer((currentAnswer) => currentAnswer ?? snapshot.answer);
+      setAnswer((current) => {
+        if (!snapshot.game) {
+          return snapshot.answer;
+        }
+
+        if (!current) {
+          return snapshot.answer;
+        }
+
+        if (current.roundNo !== snapshot.game.currentRound) {
+          return snapshot.answer;
+        }
+
+        return snapshot.answer ?? current;
+      });
       setIsSubmitting(false);
 
       if (snapshot.game?.status === "round_result") {
         navigate("/player/round-result");
         return;
       }
+
       if (snapshot.game?.status === "ended") {
         navigate("/player/final");
         return;
       }
+
       if (snapshot.game?.mode === "survival" && snapshot.player?.status === "eliminated") {
         navigate("/player/eliminated");
       }
     }
 
     void load();
-    const unsubscribe = subscribeToGameRealtime(sessionData.gameId, () => {
+    const unsubscribe = subscribeToGameRealtime(currentSession.gameId, () => {
       void load();
     });
 
@@ -75,84 +108,96 @@ export function PlayerQuestionPage() {
   }, [navigate, session]);
 
   useEffect(() => {
-    if (!game || game.mode !== "competition" || !game.startedAt || !game.competitionSeconds) {
+    if (!session || !game || !question || game.mode !== "competition" || !game.startedAt || !game.competitionSeconds) {
       setRemainingMs(null);
       return;
     }
 
-    const endAt = new Date(game.startedAt).getTime() + game.competitionSeconds * 1000;
+    const startedAtMs = new Date(game.startedAt).getTime();
+    const durationMs = Math.max(game.competitionSeconds * 1000, 1000);
+
     const update = () => {
-      setRemainingMs(Math.max(0, endAt - Date.now()));
+      const elapsedMs = Math.max(0, Date.now() - startedAtMs);
+      const nextRemainingMs = Math.max(0, durationMs - elapsedMs);
+      setRemainingMs(nextRemainingMs);
+
+      if (nextRemainingMs === 0 && !answer) {
+        setAnswer(
+          createTimeoutAnswer(session.playerId, question.id, game.currentRound, durationMs)
+        );
+        setIsSubmitting(false);
+      }
     };
 
     update();
-    const timer = window.setInterval(update, 250);
+    const timer = window.setInterval(update, 100);
     return () => window.clearInterval(timer);
-  }, [game]);
+  }, [answer, game, question, session]);
 
   const remainingSeconds = useMemo(() => {
     if (remainingMs === null) {
       return null;
     }
+
     return Math.ceil(remainingMs / 1000);
   }, [remainingMs]);
 
   async function submit(option: "A" | "B" | "C" | "D") {
-    const currentSession = session;
-    if (!currentSession || !game || !question || answer || isSubmitting) {
+    if (!session || !game || !question || answer || isSubmitting) {
       return;
     }
 
     const competitionDurationMs = Math.max((game.competitionSeconds ?? 10) * 1000, 1000);
-    const optimisticResponseMs =
+    const startedAtMs = game.startedAt ? new Date(game.startedAt).getTime() : Date.now();
+    const actualResponseMs =
       game.mode === "competition"
-        ? remainingMs !== null
-          ? Math.max(0, competitionDurationMs - remainingMs)
-          : 0
+        ? Math.min(Math.max(Date.now() - startedAtMs, 0), competitionDurationMs)
         : null;
 
-    const optimisticAnswer: PlayerAnswer = {
-      playerId: currentSession.playerId,
+    setError("");
+    setIsSubmitting(true);
+    setAnswer({
+      playerId: session.playerId,
       questionId: question.id,
       roundNo: game.currentRound,
       selectedOption: option,
       answerStatus: "wrong",
       isCorrect: false,
-      responseMs: optimisticResponseMs,
+      responseMs: actualResponseMs,
       score: 0,
       answeredAt: new Date().toISOString()
-    };
-
-    setError("");
-    setIsSubmitting(true);
-    setAnswer(optimisticAnswer);
+    });
 
     try {
       await submitAnswerRecord({
         gameId: game.id,
-        playerId: currentSession.playerId,
+        playerId: session.playerId,
         selectedOption: option
       });
     } catch (submissionError) {
       setAnswer(null);
       setIsSubmitting(false);
-      setError(submissionError instanceof Error ? submissionError.message : "送出答案失敗，請稍後再試。");
+      setError(submissionError instanceof Error ? submissionError.message : "送出答案失敗，請再試一次。");
     }
   }
 
   if (!game || !question) {
     return (
       <div className="player-layout">
-        <SectionCard title="讀取題目中">
-          <p>正在同步最新題目與場次狀態，請稍候。</p>
+        <SectionCard title="正在載入題目">
+          <p>系統正在同步目前題目，請稍候。</p>
         </SectionCard>
       </div>
     );
   }
 
+  const timeoutLocked =
+    game.mode === "competition" &&
+    answer?.answerStatus === "no_answer" &&
+    !answer.selectedOption;
   const answerLocked = Boolean(answer);
-  const submittedOption = answer?.selectedOption ?? "-";
-  const elapsedSeconds = game.mode === "competition" ? formatElapsedSeconds(answer?.responseMs) : null;
+  const submittedOption = answer?.selectedOption ?? "未作答";
+  const elapsedSeconds = formatElapsedSeconds(answer?.responseMs);
 
   return (
     <div className="player-layout">
@@ -172,19 +217,25 @@ export function PlayerQuestionPage() {
       </section>
 
       <SectionCard
-        title={answerLocked ? "答案已送出" : "請選擇答案"}
+        title={answerLocked ? "答案已鎖定" : "請選擇答案"}
         subtitle={
           answerLocked
             ? "答案已鎖定，等待主持人公布結果。"
             : player
-              ? `${player.nickname}，請在題目公布後作答。`
+              ? `${player.nickname}，請在作答時間內選出你的答案。`
               : undefined
         }
       >
         {answerLocked ? (
-          <div className="result-box">
-            <strong>{submittedOption}</strong>
-            <p>{isSubmitting ? "答案送出中，請稍候。" : "答案已鎖定，等待主持人公布結果。"}</p>
+          <div className={`result-box ${timeoutLocked ? "result-box--danger" : ""}`}>
+            <strong>{timeoutLocked ? "已超過作答時間" : submittedOption}</strong>
+            <p>
+              {timeoutLocked
+                ? "本題已超過時限，系統會以未作答 / 作答錯誤處理。"
+                : isSubmitting
+                  ? "答案已先鎖定，正在同步到系統。"
+                  : "答案已送出，等待主持人公布結果。"}
+            </p>
             {elapsedSeconds ? <p>本題用時：{elapsedSeconds} 秒</p> : null}
           </div>
         ) : (
@@ -194,7 +245,7 @@ export function PlayerQuestionPage() {
               return (
                 <button
                   className="answer-card"
-                  disabled={answerLocked || isSubmitting}
+                  disabled={answerLocked || isSubmitting || timeoutLocked}
                   key={`${question.id}-${code}`}
                   onClick={() => void submit(code)}
                   type="button"

@@ -22,7 +22,9 @@ export function RankList({ players, showScore = true, showMeta = true }: RankLis
               ) : null}
             </div>
           </div>
-          <div className="rank-meta">{showScore ? <strong>{player.score} 分</strong> : <strong>{player.status === "eliminated" ? "已淘汰" : "存活"}</strong>}</div>
+          <div className="rank-meta">
+            {showScore ? <strong>{player.score} 分</strong> : <strong>{player.status === "eliminated" ? "已淘汰" : "存活"}</strong>}
+          </div>
         </li>
       ))}
     </ol>
