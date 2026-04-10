@@ -54,9 +54,13 @@ export function PlayerWaitingPage() {
     const unsubscribe = subscribeToGameRealtime(sessionData.gameId, () => {
       void load();
     });
+    const pollTimer = window.setInterval(() => {
+      void load();
+    }, 1000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(pollTimer);
       unsubscribe();
     };
   }, [navigate, session]);

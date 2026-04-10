@@ -70,9 +70,13 @@ export function PlayerRoundResultPage() {
     const unsubscribe = subscribeToGameRealtime(currentSession.gameId, () => {
       void load();
     });
+    const pollTimer = window.setInterval(() => {
+      void load();
+    }, 1000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(pollTimer);
       unsubscribe();
     };
   }, [navigate, session]);
