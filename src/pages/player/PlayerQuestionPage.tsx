@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SectionCard } from "../../components/SectionCard";
 import { fetchPlayerSnapshot, fetchPlayerState, submitAnswerRecord, subscribeToGameRealtime } from "../../lib/gameApi";
@@ -52,6 +52,7 @@ export function PlayerQuestionPage() {
   const [prepRemainingMs, setPrepRemainingMs] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRecoveringPendingAnswer, setIsRecoveringPendingAnswer] = useState(false);
+  const answerLockRef = useRef(false);
 
   useEffect(() => {
     if (!session) {
@@ -66,7 +67,7 @@ export function PlayerQuestionPage() {
 
     const shouldPoll = () =>
       document.visibilityState === "visible" && game?.status === "live_question";
-    const getPollDelay = () => (answer ? 2500 : 5000);
+    const getPollDelay = () => (answer ? 2000 : 5000);
     const clearPollTimer = () => {
       if (timer !== null) {
         window.clearTimeout(timer);
@@ -90,6 +91,7 @@ export function PlayerQuestionPage() {
         }
 
         if (snapshot.answer) {
+          answerLockRef.current = true;
           clearPendingAnswerSession();
           return snapshot.answer;
         }
@@ -101,6 +103,7 @@ export function PlayerQuestionPage() {
           pendingAnswer.roundNo === snapshot.game.currentRound &&
           pendingAnswer.questionId === snapshot.question?.id
         ) {
+          answerLockRef.current = true;
           return {
             playerId: currentSession.playerId,
             questionId: pendingAnswer.questionId,
@@ -115,10 +118,12 @@ export function PlayerQuestionPage() {
         }
 
         if (!current) {
+          answerLockRef.current = false;
           return snapshot.answer;
         }
 
         if (current.roundNo !== snapshot.game.currentRound) {
+          answerLockRef.current = false;
           return snapshot.answer;
         }
 
@@ -143,7 +148,27 @@ export function PlayerQuestionPage() {
 
     void load();
     const unsubscribe = subscribeToGameRealtime(currentSession.gameId, () => {
-      void load();
+      void fetchPlayerState(currentSession.gameId, currentSession.playerId)
+        .then((state) => {
+          if (cancelled) {
+            return;
+          }
+
+          if (state.game.status === "round_result") {
+            navigate("/player/round-result");
+            return;
+          }
+
+          if (state.game.status === "ended") {
+            navigate("/player/final");
+            return;
+          }
+
+          void load();
+        })
+        .catch(() => {
+          void load();
+        });
     }, currentSession.playerId);
     const scheduleNextPoll = () => {
       if (cancelled) {
@@ -174,6 +199,16 @@ export function PlayerQuestionPage() {
               state.game.mode === "survival" && state.player.status !== player?.status;
 
             if (statusChanged || survivalChanged) {
+              if (state.game.status === "round_result") {
+                navigate("/player/round-result");
+                return;
+              }
+
+              if (state.game.status === "ended") {
+                navigate("/player/final");
+                return;
+              }
+
               void load();
             }
           })
@@ -262,7 +297,8 @@ export function PlayerQuestionPage() {
       setPrepRemainingMs(prepMs);
       setRemainingMs(nextRemainingMs);
 
-      if (prepMs === 0 && nextRemainingMs === 0 && !answer) {
+      if (prepMs === 0 && nextRemainingMs === 0 && !answer && !answerLockRef.current) {
+        answerLockRef.current = true;
         setAnswer(
           createTimeoutAnswer(session.playerId, question.id, game.currentRound, durationMs)
         );
@@ -312,6 +348,7 @@ export function PlayerQuestionPage() {
 
     setError("");
     setIsSubmitting(true);
+    answerLockRef.current = true;
     setPendingAnswerSession({
       gameId: game.id,
       playerId: session.playerId,
@@ -341,6 +378,7 @@ export function PlayerQuestionPage() {
         answeredAt
       });
       clearPendingAnswerSession();
+      setIsSubmitting(false);
     } catch (submissionError) {
       setIsSubmitting(false);
       setError(

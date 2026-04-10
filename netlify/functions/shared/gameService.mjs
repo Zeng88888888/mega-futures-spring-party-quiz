@@ -3,6 +3,7 @@
 const DEFAULT_COMPETITION_SECONDS = 10;
 const DEFAULT_BANK_TITLE = "題庫一";
 const PREP_COUNTDOWN_SECONDS = 10;
+const COMPETITION_SUBMISSION_GRACE_MS = 2000;
 
 const GAME_SELECT = `
   id,
@@ -1120,11 +1121,15 @@ export async function submitAnswer(payload) {
 
   if (game.mode === "competition" && game.started_at && game.competition_seconds) {
     const startedAtMs = new Date(game.started_at).getTime();
-    if (answeredAtMs < startedAtMs) {
+    const serverReceivedAtMs = Date.now();
+    if (answeredAtMs < startedAtMs && serverReceivedAtMs < startedAtMs) {
       throw new Error("本題尚未開始作答。");
     }
     const deadlineMs = startedAtMs + game.competition_seconds * 1000;
-    if (answeredAtMs > deadlineMs) {
+    if (
+      answeredAtMs > deadlineMs + COMPETITION_SUBMISSION_GRACE_MS &&
+      serverReceivedAtMs > deadlineMs + COMPETITION_SUBMISSION_GRACE_MS
+    ) {
       throw new Error("本題作答時間已結束。");
     }
   }

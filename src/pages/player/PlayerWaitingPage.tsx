@@ -64,7 +64,32 @@ export function PlayerWaitingPage() {
 
     void load();
     const unsubscribe = subscribeToGameRealtime(sessionData.gameId, () => {
-      void load();
+      void fetchPlayerState(sessionData.gameId, sessionData.playerId)
+        .then((state) => {
+          if (cancelled) {
+            return;
+          }
+
+          if (state.game.status === "live_question") {
+            navigate("/player/question");
+            return;
+          }
+
+          if (state.game.status === "round_result") {
+            navigate("/player/round-result");
+            return;
+          }
+
+          if (state.game.status === "ended") {
+            navigate("/player/final");
+            return;
+          }
+
+          void load();
+        })
+        .catch(() => {
+          void load();
+        });
     }, sessionData.playerId);
     const scheduleNextPoll = () => {
       if (cancelled) {

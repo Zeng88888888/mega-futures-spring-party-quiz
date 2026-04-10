@@ -14,6 +14,7 @@ import {
   startGameRecord,
   startNextRoundRecord
 } from "../../lib/gameApi";
+import { supabase } from "../../lib/supabase";
 import type { LiveGame, Player, PlayerRoundStatus, Question, RoundResult } from "../../types/domain";
 
 function formatMode(mode: LiveGame["mode"]) {
@@ -223,11 +224,35 @@ export function AdminControlPage() {
       isPolling = false;
       scheduleNextPoll();
     });
+
+    const realtimeChannel = game?.id
+      ? supabase
+          .channel(`admin-control-${game.id}`)
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "answers", filter: `game_id=eq.${game.id}` },
+            () => {
+              void loadLightweight(game.id).catch(() => undefined);
+            }
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "round_results", filter: `game_id=eq.${game.id}` },
+            () => {
+              void load(game.id).catch(() => undefined);
+            }
+          )
+          .subscribe()
+      : null;
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       cancelled = true;
       clearPollTimer();
+      if (realtimeChannel) {
+        void supabase.removeChannel(realtimeChannel);
+      }
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [game?.id, game?.status, preferredGameId]);
