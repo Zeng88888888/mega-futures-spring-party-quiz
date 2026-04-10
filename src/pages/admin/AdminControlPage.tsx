@@ -4,6 +4,8 @@ import { MetricCard } from "../../components/MetricCard";
 import { RankList } from "../../components/RankList";
 import { SectionCard } from "../../components/SectionCard";
 import {
+  endGameRecord,
+  fetchAdminControlStatus,
   fetchAdminControlSnapshot,
   fetchGames,
   openRegistrationRecord,
@@ -78,7 +80,20 @@ export function AdminControlPage() {
     let timer: number | null = null;
     let isPolling = false;
 
-    const getPollDelay = () => (document.visibilityState === "visible" ? 4000 : 10000);
+    const shouldPoll = () => document.visibilityState === "visible" && game?.status !== "ended";
+    const getPollDelay = () => {
+      switch (game?.status) {
+        case "live_question":
+          return 2000;
+        case "round_result":
+          return 5000;
+        case "draft":
+        case "registering":
+          return 10000;
+        default:
+          return 12000;
+      }
+    };
     const clearPollTimer = () => {
       if (timer !== null) {
         window.clearTimeout(timer);
@@ -153,8 +168,25 @@ export function AdminControlPage() {
       }
     }
 
-    const scheduleNextPoll = () => {
+    async function loadLightweight(targetGameId: string) {
+      const snapshot = await fetchAdminControlStatus(targetGameId);
       if (cancelled) {
+        return;
+      }
+
+      setSubmittedCount(snapshot.submittedCount);
+
+      const statusChanged =
+        snapshot.game.status !== game?.status || snapshot.game.currentRound !== game?.currentRound;
+
+      if (statusChanged) {
+        await load(targetGameId);
+      }
+    }
+
+    const scheduleNextPoll = () => {
+      if (cancelled || !shouldPoll()) {
+        clearPollTimer();
         return;
       }
 
@@ -166,11 +198,24 @@ export function AdminControlPage() {
         }
 
         isPolling = true;
-        void load(game?.id).finally(() => {
+        const targetGameId = game?.id ?? preferredGameId;
+        const request = targetGameId ? loadLightweight(targetGameId) : load();
+
+        void request.catch(() => load(targetGameId)).finally(() => {
           isPolling = false;
           scheduleNextPoll();
         });
       }, getPollDelay());
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && !isPolling) {
+        void load(game?.id).finally(() => {
+          scheduleNextPoll();
+        });
+      } else if (document.visibilityState !== "visible") {
+        clearPollTimer();
+      }
     };
 
     isPolling = true;
@@ -178,12 +223,14 @@ export function AdminControlPage() {
       isPolling = false;
       scheduleNextPoll();
     });
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       cancelled = true;
       clearPollTimer();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [game?.id, preferredGameId]);
+  }, [game?.id, game?.status, preferredGameId]);
 
   const validPlayers = useMemo(() => players.filter((player) => player.valid), [players]);
   const invalidPlayers = useMemo(() => players.filter((player) => !player.valid), [players]);
@@ -261,6 +308,19 @@ export function AdminControlPage() {
     }
 
     await runAction(() => resetGameRecord(game.id));
+  }
+
+  async function handleEndGame() {
+    if (!game || game.status === "ended") {
+      return;
+    }
+
+    const confirmed = window.confirm("確定要直接結束這個場次嗎？結束後玩家會進入最終結果頁。");
+    if (!confirmed) {
+      return;
+    }
+
+    await runAction(() => endGameRecord(game.id));
   }
 
   function exportRoundPlayers(roundNo: number, kind: "alive" | "eliminated", targetPlayers: Player[]) {
@@ -347,6 +407,9 @@ export function AdminControlPage() {
           </button>
           <button className="button button--ghost" onClick={() => void handleResetGame()} type="button">
             重設場次
+          </button>
+          <button className="button button--ghost" onClick={() => void handleEndGame()} type="button">
+            結束活動
           </button>
         </div>
       </section>

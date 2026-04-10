@@ -1601,3 +1601,45 @@ export async function getControlSnapshot(payload) {
   };
 }
 
+export async function getControlStatus(payload) {
+  const game = await fetchGameById(payload.gameId);
+  if (!game) {
+    throw new Error("找不到場次。");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const currentRound = Number(game.current_round ?? 0);
+
+  if (currentRound <= 0) {
+    return {
+      game: {
+        id: game.id,
+        status: game.status,
+        currentRound,
+        mode: game.mode
+      },
+      submittedCount: 0
+    };
+  }
+
+  const { count, error } = await supabase
+    .from("answers")
+    .select("id", { count: "exact", head: true })
+    .eq("game_id", payload.gameId)
+    .eq("round_no", currentRound);
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    game: {
+      id: game.id,
+      status: game.status,
+      currentRound,
+      mode: game.mode
+    },
+    submittedCount: count ?? 0
+  };
+}
+

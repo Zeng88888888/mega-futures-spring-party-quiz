@@ -64,7 +64,9 @@ export function PlayerQuestionPage() {
     let timer: number | null = null;
     let isPolling = false;
 
-    const getPollDelay = () => (document.visibilityState === "visible" ? 5000 : 12000);
+    const shouldPoll = () =>
+      document.visibilityState === "visible" && game?.status === "live_question";
+    const getPollDelay = () => 5000;
     const clearPollTimer = () => {
       if (timer !== null) {
         window.clearTimeout(timer);
@@ -148,6 +150,11 @@ export function PlayerQuestionPage() {
         return;
       }
 
+      if (!shouldPoll()) {
+        clearPollTimer();
+        return;
+      }
+
       clearPollTimer();
       timer = window.setTimeout(() => {
         if (isPolling) {
@@ -180,11 +187,23 @@ export function PlayerQuestionPage() {
       }, getPollDelay());
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && !isPolling) {
+        void load().finally(() => {
+          scheduleNextPoll();
+        });
+      } else if (document.visibilityState !== "visible") {
+        clearPollTimer();
+      }
+    };
+
     scheduleNextPoll();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       cancelled = true;
       clearPollTimer();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       unsubscribe();
     };
   }, [game?.currentRound, game?.status, navigate, player?.status, session]);

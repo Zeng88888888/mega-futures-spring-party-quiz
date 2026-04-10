@@ -391,6 +391,23 @@ export async function fetchAdminControlSnapshot(gameId: string) {
   };
 }
 
+export async function fetchAdminControlStatus(gameId: string) {
+  const result = await runAdminAction<{
+    game: {
+      id: string;
+      status: GameStatus;
+      currentRound: number;
+      mode: GameMode;
+    };
+    submittedCount: number;
+  }>("getControlStatus", { gameId });
+
+  return {
+    game: result.game,
+    submittedCount: result.submittedCount ?? 0
+  };
+}
+
 export async function createGameRecord(payload: {
   title: string;
   mode: GameMode;
