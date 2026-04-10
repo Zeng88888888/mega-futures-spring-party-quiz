@@ -13,6 +13,17 @@ async function readJsonSafe(response: Response) {
   }
 }
 
+function normalizeFunctionError(data: Record<string, unknown>) {
+  const message = String(data.message ?? data.error ?? "");
+  const errorCode = String(data.error ?? "");
+
+  if (errorCode === "usage_exceeded" || /usage exceeded/i.test(message)) {
+    return "目前這個 Netlify 站的 Functions 額度已用完，請改用正式站或等待額度重置。";
+  }
+
+  return message || "函式呼叫失敗。";
+}
+
 async function callFunction<T>(
   name: string,
   payload: Record<string, unknown>,
@@ -35,7 +46,7 @@ async function callFunction<T>(
   const data = await readJsonSafe(response);
 
   if (!response.ok) {
-    throw new Error(String(data.message ?? "函式呼叫失敗。"));
+    throw new Error(normalizeFunctionError(data));
   }
 
   return data as T;

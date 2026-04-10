@@ -76,6 +76,15 @@ export function AdminControlPage() {
   useEffect(() => {
     let cancelled = false;
     let timer: number | null = null;
+    let isPolling = false;
+
+    const getPollDelay = () => (document.visibilityState === "visible" ? 4000 : 10000);
+    const clearPollTimer = () => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+    };
 
     async function load(targetGameId?: string) {
       try {
@@ -144,16 +153,35 @@ export function AdminControlPage() {
       }
     }
 
-    void load(game?.id);
-    timer = window.setInterval(() => {
-      void load(game?.id);
-    }, 2000);
+    const scheduleNextPoll = () => {
+      if (cancelled) {
+        return;
+      }
+
+      clearPollTimer();
+      timer = window.setTimeout(() => {
+        if (isPolling) {
+          scheduleNextPoll();
+          return;
+        }
+
+        isPolling = true;
+        void load(game?.id).finally(() => {
+          isPolling = false;
+          scheduleNextPoll();
+        });
+      }, getPollDelay());
+    };
+
+    isPolling = true;
+    void load(game?.id).finally(() => {
+      isPolling = false;
+      scheduleNextPoll();
+    });
 
     return () => {
       cancelled = true;
-      if (timer !== null) {
-        window.clearInterval(timer);
-      }
+      clearPollTimer();
     };
   }, [game?.id, preferredGameId]);
 

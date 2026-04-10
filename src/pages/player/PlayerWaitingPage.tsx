@@ -31,6 +31,16 @@ export function PlayerWaitingPage() {
     const sessionData = currentSession;
 
     let cancelled = false;
+    let timer: number | null = null;
+    let isPolling = false;
+
+    const getPollDelay = () => (document.visibilityState === "visible" ? 5000 : 12000);
+    const clearPollTimer = () => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+    };
 
     async function load() {
       const snapshot = await fetchPlayerSnapshot(sessionData.gameId, sessionData.playerId);
@@ -54,25 +64,44 @@ export function PlayerWaitingPage() {
     const unsubscribe = subscribeToGameRealtime(sessionData.gameId, () => {
       void load();
     });
-    const pollTimer = window.setInterval(() => {
-      void fetchPlayerState(sessionData.gameId, sessionData.playerId)
-        .then((state) => {
-          if (cancelled) {
-            return;
-          }
+    const scheduleNextPoll = () => {
+      if (cancelled) {
+        return;
+      }
 
-          if (state.game.status !== game?.status || state.game.currentRound !== game?.currentRound) {
-            void load();
-          }
-        })
-        .catch(() => {
-          // Ignore fallback polling errors and keep waiting for the next cycle.
-        });
-    }, 3000);
+      clearPollTimer();
+      timer = window.setTimeout(() => {
+        if (isPolling) {
+          scheduleNextPoll();
+          return;
+        }
+
+        isPolling = true;
+        void fetchPlayerState(sessionData.gameId, sessionData.playerId)
+          .then((state) => {
+            if (cancelled) {
+              return;
+            }
+
+            if (state.game.status !== game?.status || state.game.currentRound !== game?.currentRound) {
+              void load();
+            }
+          })
+          .catch(() => {
+            // Ignore fallback polling errors and keep waiting for the next cycle.
+          })
+          .finally(() => {
+            isPolling = false;
+            scheduleNextPoll();
+          });
+      }, getPollDelay());
+    };
+
+    scheduleNextPoll();
 
     return () => {
       cancelled = true;
-      window.clearInterval(pollTimer);
+      clearPollTimer();
       unsubscribe();
     };
   }, [game?.currentRound, game?.status, navigate, session]);

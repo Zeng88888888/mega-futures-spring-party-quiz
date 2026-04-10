@@ -61,6 +61,16 @@ export function PlayerQuestionPage() {
     const currentSession = session;
 
     let cancelled = false;
+    let timer: number | null = null;
+    let isPolling = false;
+
+    const getPollDelay = () => (document.visibilityState === "visible" ? 5000 : 12000);
+    const clearPollTimer = () => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+    };
 
     async function load() {
       const snapshot = await fetchPlayerSnapshot(currentSession.gameId, currentSession.playerId);
@@ -133,29 +143,48 @@ export function PlayerQuestionPage() {
     const unsubscribe = subscribeToGameRealtime(currentSession.gameId, () => {
       void load();
     });
-    const pollTimer = window.setInterval(() => {
-      void fetchPlayerState(currentSession.gameId, currentSession.playerId)
-        .then((state) => {
-          if (cancelled) {
-            return;
-          }
+    const scheduleNextPoll = () => {
+      if (cancelled) {
+        return;
+      }
 
-          const statusChanged = state.game.status !== game?.status || state.game.currentRound !== game?.currentRound;
-          const survivalChanged =
-            state.game.mode === "survival" && state.player.status !== player?.status;
+      clearPollTimer();
+      timer = window.setTimeout(() => {
+        if (isPolling) {
+          scheduleNextPoll();
+          return;
+        }
 
-          if (statusChanged || survivalChanged) {
-            void load();
-          }
-        })
-        .catch(() => {
-          // Ignore fallback polling errors and keep waiting for the next cycle.
-        });
-    }, 3000);
+        isPolling = true;
+        void fetchPlayerState(currentSession.gameId, currentSession.playerId)
+          .then((state) => {
+            if (cancelled) {
+              return;
+            }
+
+            const statusChanged = state.game.status !== game?.status || state.game.currentRound !== game?.currentRound;
+            const survivalChanged =
+              state.game.mode === "survival" && state.player.status !== player?.status;
+
+            if (statusChanged || survivalChanged) {
+              void load();
+            }
+          })
+          .catch(() => {
+            // Ignore fallback polling errors and keep waiting for the next cycle.
+          })
+          .finally(() => {
+            isPolling = false;
+            scheduleNextPoll();
+          });
+      }, getPollDelay());
+    };
+
+    scheduleNextPoll();
 
     return () => {
       cancelled = true;
-      window.clearInterval(pollTimer);
+      clearPollTimer();
       unsubscribe();
     };
   }, [game?.currentRound, game?.status, navigate, player?.status, session]);
