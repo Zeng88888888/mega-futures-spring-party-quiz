@@ -1188,9 +1188,9 @@ export async function submitAnswer(payload) {
     throw error;
   }
 
-  const { error: playerError } = await supabase.from("players").update({ status: "submitted" }).eq("id", payload.playerId);
-  if (playerError) {
-    throw playerError;
+  const { error: markSubmittedError } = await supabase.from("players").update({ status: "submitted" }).eq("id", payload.playerId);
+  if (markSubmittedError) {
+    throw markSubmittedError;
   }
 }
 
