@@ -231,7 +231,24 @@ export function AdminControlPage() {
           .on(
             "postgres_changes",
             { event: "*", schema: "public", table: "answers", filter: `game_id=eq.${game.id}` },
-            () => {
+            (payload) => {
+              const nextRow = payload.new as { round_no?: number } | null;
+              const previousRow = payload.old as { round_no?: number } | null;
+              const affectedRound = Number(nextRow?.round_no ?? previousRow?.round_no ?? 0);
+              if (affectedRound !== game.currentRound) {
+                return;
+              }
+
+              if (payload.eventType === "INSERT") {
+                setSubmittedCount((current) => current + 1);
+                return;
+              }
+
+              if (payload.eventType === "DELETE") {
+                setSubmittedCount((current) => Math.max(0, current - 1));
+                return;
+              }
+
               void loadLightweight(game.id).catch(() => undefined);
             }
           )

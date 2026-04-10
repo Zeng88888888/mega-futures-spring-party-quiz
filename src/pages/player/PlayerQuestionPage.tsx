@@ -52,7 +52,7 @@ async function submitAnswerWithTimeout(
     selectedOption: "A" | "B" | "C" | "D";
     answeredAt: string;
   },
-  timeoutMs = 10000
+  timeoutMs = 25000
 ) {
   return Promise.race([
     submitAnswerRecord(payload),
@@ -89,8 +89,10 @@ export function PlayerQuestionPage() {
     let isPolling = false;
 
     const shouldPoll = () =>
-      document.visibilityState === "visible" && game?.status === "live_question";
-    const getPollDelay = () => (answer ? 2500 : 5000);
+      document.visibilityState === "visible" &&
+      game?.status === "live_question" &&
+      !answerLockRef.current;
+    const getPollDelay = () => 5000;
     const clearPollTimer = () => {
       if (timer !== null) {
         window.clearTimeout(timer);

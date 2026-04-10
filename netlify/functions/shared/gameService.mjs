@@ -1654,14 +1654,14 @@ export async function getControlSnapshot(payload) {
   const question = game.current_round > 0 ? await fetchQuestionForRound(payload.gameId, game.current_round) : null;
 
   return {
-    game,
-    players,
-    question,
-    submittedCount: answers.length,
-    roundHistory: roundResults.data ?? [],
-    roundStatuses: roundStatuses.data ?? [],
-    roundStatusHistory: roundStatusHistory.data ?? []
-  };
+      game,
+      players,
+      question,
+      submittedCount: players.filter((player) => player.is_valid && player.status === "submitted").length,
+      roundHistory: roundResults.data ?? [],
+      roundStatuses: roundStatuses.data ?? [],
+      roundStatusHistory: roundStatusHistory.data ?? []
+    };
 }
 
 export async function getControlStatus(payload) {
@@ -1686,10 +1686,11 @@ export async function getControlStatus(payload) {
   }
 
   const { count, error } = await supabase
-    .from("answers")
+    .from("players")
     .select("id", { count: "exact", head: true })
     .eq("game_id", payload.gameId)
-    .eq("round_no", currentRound);
+    .eq("is_valid", true)
+    .eq("status", "submitted");
 
   if (error) {
     throw error;
