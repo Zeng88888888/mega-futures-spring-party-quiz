@@ -49,10 +49,12 @@ async function submitAnswerWithTimeout(
   payload: {
     gameId: string;
     playerId: string;
+    questionId: string;
+    roundNo: number;
     selectedOption: "A" | "B" | "C" | "D";
     answeredAt: string;
   },
-  timeoutMs = 25000
+  timeoutMs = 6000
 ) {
   return Promise.race([
     submitAnswerRecord(payload),
@@ -274,7 +276,7 @@ export function PlayerQuestionPage() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       unsubscribe();
     };
-  }, [answer, game?.currentRound, game?.status, navigate, player?.status, session]);
+  }, [game?.currentRound, game?.status, navigate, session]);
 
   useEffect(() => {
     if (!session || !game || !question || !answer?.selectedOption) {
@@ -316,8 +318,20 @@ export function PlayerQuestionPage() {
         return;
       }
 
+      const latestPendingAnswer = getPendingAnswerSession();
+      if (
+        !latestPendingAnswer ||
+        latestPendingAnswer.gameId !== session.gameId ||
+        latestPendingAnswer.playerId !== session.playerId ||
+        latestPendingAnswer.roundNo !== game.currentRound ||
+        latestPendingAnswer.questionId !== question.id ||
+        latestPendingAnswer.selectedOption !== pendingAnswer.selectedOption
+      ) {
+        return;
+      }
+
       if (submitInFlightRef.current) {
-        queueRetry(2500);
+        queueRetry(2000);
         return;
       }
 
@@ -328,8 +342,10 @@ export function PlayerQuestionPage() {
         await submitAnswerWithTimeout({
           gameId: game.id,
           playerId: session.playerId,
-          selectedOption: pendingAnswer.selectedOption,
-          answeredAt: pendingAnswer.answeredAt
+          questionId: question.id,
+          roundNo: game.currentRound,
+          selectedOption: latestPendingAnswer.selectedOption,
+          answeredAt: latestPendingAnswer.answeredAt
         });
         if (!cancelled) {
           clearPendingAnswerSession();
@@ -340,7 +356,7 @@ export function PlayerQuestionPage() {
           setError(
             submissionError instanceof Error ? submissionError.message : "答案送出較慢，系統會自動重試。"
           );
-          queueRetry(2500);
+          queueRetry(2000);
         }
       } finally {
         submitInFlightRef.current = false;
@@ -351,7 +367,7 @@ export function PlayerQuestionPage() {
       }
     };
 
-    queueRetry(1200);
+    queueRetry(1500);
 
     return () => {
       cancelled = true;
@@ -463,6 +479,8 @@ export function PlayerQuestionPage() {
       await submitAnswerWithTimeout({
         gameId: game.id,
         playerId: session.playerId,
+        questionId: question.id,
+        roundNo: game.currentRound,
         selectedOption: option,
         answeredAt
       });

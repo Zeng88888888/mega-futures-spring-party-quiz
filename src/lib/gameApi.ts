@@ -507,6 +507,8 @@ export async function deletePlayersRecord(playerIds: string[]) {
 export async function submitAnswerRecord(params: {
   gameId: string;
   playerId: string;
+  questionId: string;
+  roundNo: number;
   selectedOption: "A" | "B" | "C" | "D";
   answeredAt: string;
 }) {

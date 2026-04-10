@@ -309,6 +309,37 @@ export async function fetchPlayers(gameId) {
   return data ?? [];
 }
 
+async function countSubmittedAnswers(gameId, roundNo) {
+  const supabase = getSupabaseAdmin();
+  const [
+    { count: answerCount, error: answerError },
+    { count: playerCount, error: playerError }
+  ] = await Promise.all([
+    supabase
+      .from("answers")
+      .select("id", { count: "exact", head: true })
+      .eq("game_id", gameId)
+      .eq("round_no", roundNo)
+      .not("selected_option", "is", null),
+    supabase
+      .from("players")
+      .select("id", { count: "exact", head: true })
+      .eq("game_id", gameId)
+      .eq("status", "submitted")
+      .eq("is_valid", true)
+  ]);
+
+  if (answerError) {
+    throw answerError;
+  }
+
+  if (playerError) {
+    throw playerError;
+  }
+
+  return Math.max(answerCount ?? 0, playerCount ?? 0);
+}
+
 export async function getPlayerById(payload) {
   return { player: await fetchPlayerById(payload.playerId) };
 }
@@ -513,6 +544,28 @@ export async function fetchAnswersForRound(gameId, roundNo) {
   }
 
   return data ?? [];
+}
+
+async function waitForSubmittedAnswers(gameId, roundNo, expectedCount, maxWaitMs = 5000, intervalMs = 400) {
+  const targetCount = Math.max(Number(expectedCount ?? 0), 0);
+  let answers = await fetchAnswersForRound(gameId, roundNo);
+
+  if (targetCount <= 0) {
+    return answers;
+  }
+
+  const deadlineAt = Date.now() + maxWaitMs;
+  while (Date.now() < deadlineAt) {
+    const currentCount = answers.filter((answer) => answer.selected_option).length;
+    if (currentCount >= targetCount) {
+      return answers;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    answers = await fetchAnswersForRound(gameId, roundNo);
+  }
+
+  return answers;
 }
 
 async function fetchPlayerAnswerForRound(gameId, playerId, roundNo) {
@@ -1098,56 +1151,16 @@ export async function submitAnswer(payload) {
     throw playerError;
   }
 
-  if (!game || game.status !== "live_question" || !player || !player.is_valid) {
+  if (!game || !["live_question", "round_result"].includes(game.status)) {
     throw new Error("目前不可作答。");
+  }
+
+  if (!player || !player.is_valid) {
+    throw new Error("找不到有效玩家資料。");
   }
 
   if (game.mode === "survival" && player.status === "eliminated") {
     throw new Error("你已被淘汰，不能再作答。");
-  }
-
-  const { data: mapping, error: mappingError } = await supabase
-    .from("game_questions")
-    .select("question_id")
-    .eq("game_id", payload.gameId)
-    .eq("order_no", game.current_round)
-    .maybeSingle();
-
-  if (mappingError) {
-    throw mappingError;
-  }
-
-  if (!mapping?.question_id) {
-    throw new Error("本題尚未設定完成。");
-  }
-
-  const { data: existing, error: existingError } = await supabase
-    .from("answers")
-    .select("id, selected_option")
-    .eq("game_id", payload.gameId)
-    .eq("player_id", payload.playerId)
-    .eq("round_no", game.current_round)
-    .maybeSingle();
-
-  if (existingError) {
-    throw existingError;
-  }
-
-  if (existing) {
-    if (existing.selected_option === payload.selectedOption) {
-      const { error: existingPlayerError } = await supabase
-        .from("players")
-        .update({ status: "submitted" })
-        .eq("id", payload.playerId);
-
-      if (existingPlayerError) {
-        throw existingPlayerError;
-      }
-
-      return { ok: true, alreadySubmitted: true };
-    }
-
-    throw new Error("本題已送出過答案。");
   }
 
   const clientAnsweredAt =
@@ -1175,23 +1188,114 @@ export async function submitAnswer(payload) {
     }
   }
 
-  const { error } = await supabase.from("answers").insert({
+  const targetRound = Number(payload.roundNo ?? game.current_round);
+  if (targetRound !== Number(game.current_round)) {
+    throw new Error("本題已切換，請依目前題目重新作答。");
+  }
+
+  const targetQuestionId = String(payload.questionId ?? "").trim();
+  if (!targetQuestionId) {
+    throw new Error("找不到本題題目。");
+  }
+
+  const answerPayload = {
     game_id: payload.gameId,
-    question_id: mapping.question_id,
+    question_id: targetQuestionId,
     player_id: payload.playerId,
-    round_no: game.current_round,
+    round_no: targetRound,
     selected_option: payload.selectedOption,
     answered_at: clientAnsweredAt.toISOString()
-  });
+  };
+
+  const { error } = await supabase
+    .from("answers")
+    .upsert(answerPayload, { onConflict: "question_id,player_id" });
 
   if (error) {
     throw error;
   }
 
-  const { error: markSubmittedError } = await supabase.from("players").update({ status: "submitted" }).eq("id", payload.playerId);
-  if (markSubmittedError) {
-    throw markSubmittedError;
+  if (game.status === "live_question") {
+    const { error: playerStatusError } = await supabase.from("players").update({ status: "submitted" }).eq("id", payload.playerId);
+
+    if (playerStatusError) {
+      throw playerStatusError;
+    }
   }
+
+  if (game.status === "round_result" && game.mode === "competition") {
+    const [{ data: question, error: questionError }, { data: scorePlayer, error: scorePlayerError }, { data: repairedAnswer, error: repairedAnswerError }] =
+      await Promise.all([
+        supabase.from("questions").select("correct_option").eq("id", targetQuestionId).maybeSingle(),
+        supabase
+          .from("players")
+          .select("id, total_score, total_response_ms")
+          .eq("id", payload.playerId)
+          .maybeSingle(),
+        supabase
+          .from("answers")
+          .select("response_ms, score, answered_at, selected_option, answer_status")
+          .eq("game_id", payload.gameId)
+          .eq("question_id", targetQuestionId)
+          .eq("player_id", payload.playerId)
+          .maybeSingle()
+      ]);
+
+    if (questionError) {
+      throw questionError;
+    }
+
+    if (scorePlayerError) {
+      throw scorePlayerError;
+    }
+
+    if (repairedAnswerError) {
+      throw repairedAnswerError;
+    }
+
+    if (question && scorePlayer && repairedAnswer?.selected_option) {
+      const durationMs = (game.competition_seconds || DEFAULT_COMPETITION_SECONDS) * 1000;
+      const roundStartMs = game.started_at ? new Date(game.started_at).getTime() : Date.now();
+      const answeredMs = repairedAnswer.answered_at ? new Date(repairedAnswer.answered_at).getTime() : roundStartMs + durationMs;
+      const responseMs = Math.min(Math.max(answeredMs - roundStartMs, 0), durationMs);
+      const isCorrect = repairedAnswer.selected_option === question.correct_option;
+      const nextScore = isCorrect
+        ? computeCompetitionScore(responseMs, game.competition_seconds || DEFAULT_COMPETITION_SECONDS)
+        : 0;
+      const previousScore = Number(repairedAnswer.score ?? 0);
+      const previousResponseMs = Number(repairedAnswer.response_ms ?? durationMs);
+
+      const { error: resolvedAnswerError } = await supabase
+        .from("answers")
+        .update({
+          answer_status: isCorrect ? "correct" : "wrong",
+          is_correct: isCorrect,
+          response_ms: responseMs,
+          score: nextScore
+        })
+        .eq("game_id", payload.gameId)
+        .eq("question_id", targetQuestionId)
+        .eq("player_id", payload.playerId);
+
+      if (resolvedAnswerError) {
+        throw resolvedAnswerError;
+      }
+
+      const { error: playerRepairError } = await supabase
+        .from("players")
+        .update({
+          total_score: Number(scorePlayer.total_score ?? 0) + (nextScore - previousScore),
+          total_response_ms: Number(scorePlayer.total_response_ms ?? 0) + (responseMs - previousResponseMs)
+        })
+        .eq("id", payload.playerId);
+
+      if (playerRepairError) {
+        throw playerRepairError;
+      }
+    }
+  }
+
+  return { ok: true };
 }
 
 export async function resolveRound(payload) {
@@ -1215,8 +1319,6 @@ export async function resolveRound(payload) {
   }
 
   const players = await fetchPlayers(payload.gameId);
-  const answers = await fetchAnswersForRound(payload.gameId, game.current_round);
-  const answerMap = new Map(answers.map((answer) => [answer.player_id, answer]));
   const durationMs = (game.competition_seconds || DEFAULT_COMPETITION_SECONDS) * 1000;
   const roundStartMs = game.started_at ? new Date(game.started_at).getTime() : Date.now();
   const activePlayers = players.filter(
@@ -1225,6 +1327,16 @@ export async function resolveRound(payload) {
       player.status !== "invalid" &&
       (game.mode === "competition" || player.status !== "eliminated")
   );
+
+  const expectedSubmittedCount =
+    game.mode === "competition"
+      ? activePlayers.filter((player) => player.status === "submitted").length
+      : 0;
+  const answers =
+    game.mode === "competition"
+      ? await waitForSubmittedAnswers(payload.gameId, game.current_round, expectedSubmittedCount)
+      : await fetchAnswersForRound(payload.gameId, game.current_round);
+  const answerMap = new Map(answers.map((answer) => [answer.player_id, answer]));
 
   const answerUpserts = [];
   const roundStatusUpserts = [];
@@ -1629,9 +1741,9 @@ export async function getControlSnapshot(payload) {
     throw new Error("找不到場次。");
   }
 
-  const [players, answers, roundResults, roundStatuses, roundStatusHistory] = await Promise.all([
+  const [players, submittedCount, roundResults, roundStatuses, roundStatusHistory] = await Promise.all([
     fetchPlayers(payload.gameId),
-    game.current_round > 0 ? fetchAnswersForRound(payload.gameId, game.current_round) : Promise.resolve([]),
+    game.current_round > 0 ? countSubmittedAnswers(payload.gameId, game.current_round) : Promise.resolve(0),
     getSupabaseAdmin()
       .from("round_results")
       .select("round_no, published_at, alive_count, eliminated_count")
@@ -1657,7 +1769,7 @@ export async function getControlSnapshot(payload) {
       game,
       players,
       question,
-      submittedCount: players.filter((player) => player.is_valid && player.status === "submitted").length,
+      submittedCount,
       roundHistory: roundResults.data ?? [],
       roundStatuses: roundStatuses.data ?? [],
       roundStatusHistory: roundStatusHistory.data ?? []
@@ -1685,16 +1797,7 @@ export async function getControlStatus(payload) {
     };
   }
 
-  const { count, error } = await supabase
-    .from("players")
-    .select("id", { count: "exact", head: true })
-    .eq("game_id", payload.gameId)
-    .eq("is_valid", true)
-    .eq("status", "submitted");
-
-  if (error) {
-    throw error;
-  }
+  const count = await countSubmittedAnswers(payload.gameId, currentRound);
 
   return {
     game: {

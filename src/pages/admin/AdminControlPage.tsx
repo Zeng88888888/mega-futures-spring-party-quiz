@@ -230,25 +230,57 @@ export function AdminControlPage() {
           .channel(`admin-control-${game.id}`)
           .on(
             "postgres_changes",
-            { event: "*", schema: "public", table: "answers", filter: `game_id=eq.${game.id}` },
+            { event: "*", schema: "public", table: "players", filter: `game_id=eq.${game.id}` },
             (payload) => {
-              const nextRow = payload.new as { round_no?: number } | null;
-              const previousRow = payload.old as { round_no?: number } | null;
-              const affectedRound = Number(nextRow?.round_no ?? previousRow?.round_no ?? 0);
-              if (affectedRound !== game.currentRound) {
-                return;
-              }
+              const nextRow = payload.new as { status?: string; is_valid?: boolean } | null;
+              const previousRow = payload.old as { status?: string; is_valid?: boolean } | null;
+              const hadSubmitted = Boolean(previousRow?.is_valid) && previousRow?.status === "submitted";
+              const hasSubmitted = Boolean(nextRow?.is_valid) && nextRow?.status === "submitted";
 
               if (payload.eventType === "INSERT") {
-                setSubmittedCount((current) => current + 1);
+                if (hasSubmitted) {
+                  setSubmittedCount((current) => current + 1);
+                }
                 return;
               }
 
               if (payload.eventType === "DELETE") {
-                setSubmittedCount((current) => Math.max(0, current - 1));
+                if (hadSubmitted) {
+                  setSubmittedCount((current) => Math.max(0, current - 1));
+                }
                 return;
               }
 
+              if (hadSubmitted !== hasSubmitted) {
+                setSubmittedCount((current) => Math.max(0, current + (hasSubmitted ? 1 : -1)));
+                return;
+              }
+            }
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "answers", filter: `game_id=eq.${game.id}` },
+            (payload) => {
+              const nextRow = payload.new as { round_no?: number; selected_option?: string | null } | null;
+              const previousRow = payload.old as { round_no?: number; selected_option?: string | null } | null;
+              const affectedRound = Number(nextRow?.round_no ?? previousRow?.round_no ?? 0);
+              if (affectedRound !== game.currentRound) {
+                return;
+              }
+              const hadSelected = Boolean(previousRow?.selected_option);
+              const hasSelected = Boolean(nextRow?.selected_option);
+
+              if (payload.eventType === "INSERT") {
+                if (hasSelected) {
+                  setSubmittedCount((current) => current + 1);
+                }
+              } else if (payload.eventType === "DELETE") {
+                if (hadSelected) {
+                  setSubmittedCount((current) => Math.max(0, current - 1));
+                }
+              } else if (hadSelected !== hasSelected) {
+                setSubmittedCount((current) => Math.max(0, current + (hasSelected ? 1 : -1)));
+              }
               void loadLightweight(game.id).catch(() => undefined);
             }
           )
@@ -272,7 +304,7 @@ export function AdminControlPage() {
       }
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [game?.id, game?.status, preferredGameId]);
+  }, [game?.id, game?.status, game?.currentRound, preferredGameId]);
 
   const validPlayers = useMemo(() => players.filter((player) => player.valid), [players]);
   const invalidPlayers = useMemo(() => players.filter((player) => !player.valid), [players]);

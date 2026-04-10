@@ -140,6 +140,8 @@ export async function joinGameServer(payload: {
 export async function submitAnswerServer(payload: {
   gameId: string;
   playerId: string;
+  questionId: string;
+  roundNo: number;
   selectedOption: "A" | "B" | "C" | "D";
   answeredAt: string;
 }) {
