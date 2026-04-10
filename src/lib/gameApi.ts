@@ -517,11 +517,25 @@ export async function resolveCurrentRoundRecord(gameId: string) {
   await runAdminAction("resolveRound", { gameId });
 }
 
-export function subscribeToGameRealtime(gameId: string, onChange: () => void) {
+export function subscribeToGameRealtime(gameId: string, onChange: () => void, playerId?: string) {
   const channel = supabase
-    .channel(`game-${gameId}`)
+    .channel(playerId ? `game-${gameId}-player-${playerId}` : `game-${gameId}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "games", filter: `id=eq.${gameId}` }, onChange)
-    .subscribe();
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "round_results", filter: `game_id=eq.${gameId}` },
+      onChange
+    );
+
+  if (playerId) {
+    channel.on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "player_round_statuses", filter: `player_id=eq.${playerId}` },
+      onChange
+    );
+  }
+
+  channel.subscribe();
 
   return () => {
     void supabase.removeChannel(channel);

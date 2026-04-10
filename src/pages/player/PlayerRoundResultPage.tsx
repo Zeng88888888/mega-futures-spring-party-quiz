@@ -81,7 +81,7 @@ export function PlayerRoundResultPage() {
     void load();
     const unsubscribe = subscribeToGameRealtime(currentSession.gameId, () => {
       void load();
-    });
+    }, currentSession.playerId);
     const scheduleNextPoll = () => {
       if (cancelled) {
         return;

@@ -66,7 +66,7 @@ export function PlayerQuestionPage() {
 
     const shouldPoll = () =>
       document.visibilityState === "visible" && game?.status === "live_question";
-    const getPollDelay = () => 5000;
+    const getPollDelay = () => (answer ? 2500 : 5000);
     const clearPollTimer = () => {
       if (timer !== null) {
         window.clearTimeout(timer);
@@ -144,7 +144,7 @@ export function PlayerQuestionPage() {
     void load();
     const unsubscribe = subscribeToGameRealtime(currentSession.gameId, () => {
       void load();
-    });
+    }, currentSession.playerId);
     const scheduleNextPoll = () => {
       if (cancelled) {
         return;

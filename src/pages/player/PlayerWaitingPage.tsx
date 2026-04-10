@@ -65,7 +65,7 @@ export function PlayerWaitingPage() {
     void load();
     const unsubscribe = subscribeToGameRealtime(sessionData.gameId, () => {
       void load();
-    });
+    }, sessionData.playerId);
     const scheduleNextPoll = () => {
       if (cancelled) {
         return;
