@@ -648,7 +648,8 @@ export async function fetchPlayerState(gameId: string, playerId: string) {
       id: String(result.game.id),
       status: result.game.status as GameStatus,
       currentRound: Number(result.game.currentRound ?? 0),
-      mode: result.game.mode as GameMode
+      mode: result.game.mode as GameMode,
+      hasPublishedResult: Boolean(result.game.hasPublishedResult)
     },
     player: {
       id: String(result.player.id),

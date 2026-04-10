@@ -75,7 +75,7 @@ export function PlayerWaitingPage() {
             return;
           }
 
-          if (state.game.status === "round_result") {
+          if (state.game.status === "round_result" || state.game.hasPublishedResult) {
             navigate("/player/round-result");
             return;
           }
@@ -115,7 +115,11 @@ export function PlayerWaitingPage() {
               return;
             }
 
-            if (state.game.status !== game?.status || state.game.currentRound !== game?.currentRound) {
+            if (
+              state.game.status !== game?.status ||
+              state.game.currentRound !== game?.currentRound ||
+              state.game.hasPublishedResult
+            ) {
               void load();
             }
           })

@@ -81,6 +81,7 @@ export async function readPlayerState(payload: {
       status: string;
       currentRound: number;
       mode: string;
+      hasPublishedResult?: boolean;
     };
     player: {
       id: string;

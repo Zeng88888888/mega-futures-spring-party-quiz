@@ -1077,8 +1077,26 @@ export async function resetGame(payload) {
 
 export async function submitAnswer(payload) {
   const supabase = getSupabaseAdmin();
-  const game = await fetchGameById(payload.gameId);
-  const player = await fetchPlayerById(payload.playerId);
+  const [{ data: game, error: gameError }, { data: player, error: playerError }] = await Promise.all([
+    supabase
+      .from("games")
+      .select("id, status, mode, current_round, competition_seconds, started_at")
+      .eq("id", payload.gameId)
+      .maybeSingle(),
+    supabase
+      .from("players")
+      .select("id, is_valid, status")
+      .eq("id", payload.playerId)
+      .maybeSingle()
+  ]);
+
+  if (gameError) {
+    throw gameError;
+  }
+
+  if (playerError) {
+    throw playerError;
+  }
 
   if (!game || game.status !== "live_question" || !player || !player.is_valid) {
     throw new Error("目前不可作答。");
@@ -1088,14 +1106,24 @@ export async function submitAnswer(payload) {
     throw new Error("你已被淘汰，不能再作答。");
   }
 
-  const question = await fetchQuestionForRound(payload.gameId, game.current_round);
-  if (!question) {
+  const { data: mapping, error: mappingError } = await supabase
+    .from("game_questions")
+    .select("question_id")
+    .eq("game_id", payload.gameId)
+    .eq("order_no", game.current_round)
+    .maybeSingle();
+
+  if (mappingError) {
+    throw mappingError;
+  }
+
+  if (!mapping?.question_id) {
     throw new Error("本題尚未設定完成。");
   }
 
   const { data: existing, error: existingError } = await supabase
     .from("answers")
-    .select("id")
+    .select("id, selected_option")
     .eq("game_id", payload.gameId)
     .eq("player_id", payload.playerId)
     .eq("round_no", game.current_round)
@@ -1106,6 +1134,19 @@ export async function submitAnswer(payload) {
   }
 
   if (existing) {
+    if (existing.selected_option === payload.selectedOption) {
+      const { error: existingPlayerError } = await supabase
+        .from("players")
+        .update({ status: "submitted" })
+        .eq("id", payload.playerId);
+
+      if (existingPlayerError) {
+        throw existingPlayerError;
+      }
+
+      return { ok: true, alreadySubmitted: true };
+    }
+
     throw new Error("本題已送出過答案。");
   }
 
@@ -1136,7 +1177,7 @@ export async function submitAnswer(payload) {
 
   const { error } = await supabase.from("answers").insert({
     game_id: payload.gameId,
-    question_id: question.id,
+    question_id: mapping.question_id,
     player_id: payload.playerId,
     round_no: game.current_round,
     selected_option: payload.selectedOption,
@@ -1257,73 +1298,73 @@ export async function resolveRound(payload) {
 
     playerUpdates.push({
       id: player.id,
+      game_id: player.game_id,
+      nickname: player.nickname,
+      department: player.department,
+      employee_id: player.employee_id,
       status: nextStatus,
+      is_valid: player.is_valid,
       total_score: nextTotalScore,
-      total_response_ms: nextTotalResponseMs
+      total_response_ms: nextTotalResponseMs,
+      joined_at: player.joined_at
     });
   }
 
-  if (answerUpserts.length > 0) {
-    const { error } = await supabase.from("answers").upsert(answerUpserts, { onConflict: "question_id,player_id" });
-    if (error) {
-      throw error;
-    }
+  const [answerWrite, roundStatusWrite] = await Promise.all([
+    answerUpserts.length > 0
+      ? supabase.from("answers").upsert(answerUpserts, { onConflict: "question_id,player_id" })
+      : Promise.resolve({ error: null }),
+    roundStatusUpserts.length > 0
+      ? supabase
+          .from("player_round_statuses")
+          .upsert(roundStatusUpserts, { onConflict: "question_id,player_id" })
+      : Promise.resolve({ error: null })
+  ]);
+
+  if (answerWrite.error) {
+    throw answerWrite.error;
   }
 
-  if (roundStatusUpserts.length > 0) {
-    const { error } = await supabase
-      .from("player_round_statuses")
-      .upsert(roundStatusUpserts, { onConflict: "question_id,player_id" });
-    if (error) {
-      throw error;
-    }
+  if (roundStatusWrite.error) {
+    throw roundStatusWrite.error;
   }
 
-  if (playerUpdates.length > 0) {
-    const results = await Promise.all(
-      playerUpdates.map((playerUpdate) =>
-        supabase
-          .from("players")
-          .update({
-            status: playerUpdate.status,
-            total_score: playerUpdate.total_score,
-            total_response_ms: playerUpdate.total_response_ms
-          })
-          .eq("id", playerUpdate.id)
-      )
-    );
+  const publishedAt = new Date().toISOString();
 
-    for (const result of results) {
-      if (result.error) {
-        throw result.error;
-      }
-    }
+  const [playerWrite, roundErrorResult, gameWrite] = await Promise.all([
+    playerUpdates.length > 0
+      ? supabase.from("players").upsert(playerUpdates, { onConflict: "id" })
+      : Promise.resolve({ error: null }),
+    supabase.from("round_results").upsert(
+      {
+        game_id: payload.gameId,
+        question_id: question.id,
+        round_no: game.current_round,
+        published_at: publishedAt,
+        alive_count: game.mode === "competition" ? activePlayers.length : aliveCount,
+        eliminated_count: game.mode === "competition" ? 0 : eliminatedCount
+      },
+      { onConflict: "game_id,round_no" }
+    ),
+    supabase.from("games").update({ status: "round_result" }).eq("id", payload.gameId)
+  ]);
+
+  if (playerWrite.error) {
+    throw playerWrite.error;
   }
 
-  const { error: roundError } = await supabase.from("round_results").upsert(
-    {
-      game_id: payload.gameId,
-      question_id: question.id,
-      round_no: game.current_round,
-      published_at: new Date().toISOString(),
-      alive_count: game.mode === "competition" ? activePlayers.length : aliveCount,
-      eliminated_count: game.mode === "competition" ? 0 : eliminatedCount
-    },
-    { onConflict: "game_id,round_no" }
-  );
-
+  const roundError = roundErrorResult.error;
   if (roundError) {
     throw roundError;
+  }
+
+  if (gameWrite.error) {
+    throw gameWrite.error;
   }
 
   if (game.mode === "survival" && aliveCount <= Number(game.competition_seconds || 10)) {
     await endGame({ gameId: payload.gameId });
     return;
-  }
-
-  const { error: gameError } = await supabase.from("games").update({ status: "round_result" }).eq("id", payload.gameId);
-  if (gameError) {
-    throw gameError;
   }
 }
 
@@ -1531,12 +1572,29 @@ export async function getPlayerState(payload) {
     throw new Error("找不到玩家或場次資料。");
   }
 
+  let hasPublishedResult = false;
+  if (game.current_round > 0) {
+    const { data: roundResult, error: roundResultError } = await getSupabaseAdmin()
+      .from("round_results")
+      .select("id")
+      .eq("game_id", payload.gameId)
+      .eq("round_no", game.current_round)
+      .maybeSingle();
+
+    if (roundResultError) {
+      throw roundResultError;
+    }
+
+    hasPublishedResult = Boolean(roundResult);
+  }
+
   return {
     game: {
       id: game.id,
       status: game.status,
       currentRound: game.current_round,
-      mode: game.mode
+      mode: game.mode,
+      hasPublishedResult
     },
     player: {
       id: player.id,
