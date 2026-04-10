@@ -1516,6 +1516,31 @@ export async function getPlayerSnapshot(payload) {
   };
 }
 
+export async function getPlayerState(payload) {
+  const [game, player] = await Promise.all([
+    fetchGameById(payload.gameId),
+    fetchPlayerById(payload.playerId)
+  ]);
+
+  if (!game || !player) {
+    throw new Error("找不到玩家或場次資料。");
+  }
+
+  return {
+    game: {
+      id: game.id,
+      status: game.status,
+      currentRound: game.current_round,
+      mode: game.mode
+    },
+    player: {
+      id: player.id,
+      status: player.status,
+      valid: player.is_valid
+    }
+  };
+}
+
 export async function listGames() {
   await ensureDefaultQuestionBank();
   const supabase = getSupabaseAdmin();

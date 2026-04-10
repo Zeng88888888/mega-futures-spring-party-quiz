@@ -1,8 +1,9 @@
-import { getJoinStats, getPlayerSnapshot, listJoinableGames } from "./shared/gameService.mjs";
+import { getJoinStats, getPlayerSnapshot, getPlayerState, listJoinableGames } from "./shared/gameService.mjs";
 import { json } from "./shared/supabaseAdmin.mjs";
 
 const actions = {
   getJoinStats,
+  getPlayerState,
   getPlayerSnapshot,
   listJoinableGames
 };

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SectionCard } from "../../components/SectionCard";
-import { fetchPlayerSnapshot, subscribeToGameRealtime } from "../../lib/gameApi";
+import { fetchPlayerSnapshot, fetchPlayerState, subscribeToGameRealtime } from "../../lib/gameApi";
 import { getPlayerSession } from "../../lib/playerSession";
 import type { LiveGame, Player } from "../../types/domain";
 
@@ -55,15 +55,27 @@ export function PlayerWaitingPage() {
       void load();
     });
     const pollTimer = window.setInterval(() => {
-      void load();
-    }, 1000);
+      void fetchPlayerState(sessionData.gameId, sessionData.playerId)
+        .then((state) => {
+          if (cancelled) {
+            return;
+          }
+
+          if (state.game.status !== game?.status || state.game.currentRound !== game?.currentRound) {
+            void load();
+          }
+        })
+        .catch(() => {
+          // Ignore fallback polling errors and keep waiting for the next cycle.
+        });
+    }, 3000);
 
     return () => {
       cancelled = true;
       window.clearInterval(pollTimer);
       unsubscribe();
     };
-  }, [navigate, session]);
+  }, [game?.currentRound, game?.status, navigate, session]);
 
   return (
     <div className="player-layout">

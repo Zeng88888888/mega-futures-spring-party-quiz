@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SectionCard } from "../../components/SectionCard";
-import { fetchPlayerSnapshot, submitAnswerRecord, subscribeToGameRealtime } from "../../lib/gameApi";
+import { fetchPlayerSnapshot, fetchPlayerState, submitAnswerRecord, subscribeToGameRealtime } from "../../lib/gameApi";
 import {
   clearPendingAnswerSession,
   getPendingAnswerSession,
@@ -134,15 +134,31 @@ export function PlayerQuestionPage() {
       void load();
     });
     const pollTimer = window.setInterval(() => {
-      void load();
-    }, 1000);
+      void fetchPlayerState(currentSession.gameId, currentSession.playerId)
+        .then((state) => {
+          if (cancelled) {
+            return;
+          }
+
+          const statusChanged = state.game.status !== game?.status || state.game.currentRound !== game?.currentRound;
+          const survivalChanged =
+            state.game.mode === "survival" && state.player.status !== player?.status;
+
+          if (statusChanged || survivalChanged) {
+            void load();
+          }
+        })
+        .catch(() => {
+          // Ignore fallback polling errors and keep waiting for the next cycle.
+        });
+    }, 3000);
 
     return () => {
       cancelled = true;
       window.clearInterval(pollTimer);
       unsubscribe();
     };
-  }, [navigate, session]);
+  }, [game?.currentRound, game?.status, navigate, player?.status, session]);
 
   useEffect(() => {
     if (!session || !game || !question || !answer?.selectedOption || isRecoveringPendingAnswer || isSubmitting) {

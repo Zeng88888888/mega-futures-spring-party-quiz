@@ -3,6 +3,7 @@ import {
   joinGameServer,
   readJoinStats,
   readJoinableGames,
+  readPlayerState,
   readPlayerSnapshot,
   runAdminAction,
   submitAnswerServer
@@ -605,6 +606,24 @@ export async function fetchPlayerSnapshot(gameId: string, playerId: string) {
           )
         } as PlayerRoundStatus)
       : null
+  };
+}
+
+export async function fetchPlayerState(gameId: string, playerId: string) {
+  const result = await readPlayerState({ gameId, playerId });
+
+  return {
+    game: {
+      id: String(result.game.id),
+      status: result.game.status as GameStatus,
+      currentRound: Number(result.game.currentRound ?? 0),
+      mode: result.game.mode as GameMode
+    },
+    player: {
+      id: String(result.player.id),
+      status: result.player.status as PlayerStatus,
+      valid: Boolean(result.player.valid)
+    }
   };
 }
 

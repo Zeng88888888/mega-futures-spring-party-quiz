@@ -60,6 +60,25 @@ export async function readPlayerSnapshot(payload: {
   }>("game-read", { action: "getPlayerSnapshot", payload });
 }
 
+export async function readPlayerState(payload: {
+  gameId: string;
+  playerId: string;
+}) {
+  return callFunction<{
+    game: {
+      id: string;
+      status: string;
+      currentRound: number;
+      mode: string;
+    };
+    player: {
+      id: string;
+      status: string;
+      valid: boolean;
+    };
+  }>("game-read", { action: "getPlayerState", payload });
+}
+
 export async function readJoinStats(joinCode: string) {
   return callFunction<{
     game: {
